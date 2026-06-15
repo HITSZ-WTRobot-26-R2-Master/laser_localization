@@ -1,0 +1,179 @@
+## 注：regions可以选择使用圆形区域或矩形区域
+## 圆形区域：需要有x，y和max_lidar_distance_to_center_m参数（都是值）
+## 矩形区域：需要有x_range，y_range（都是范围[]）
+
+
+
+world:
+  frame_id: map
+  axis_aligned: true
+  unit: meter
+
+scene_manager:
+  active_scene: mode_a   ## 蓝方
+  allow_runtime_switch: false
+
+corner_pool:
+  c00: [1.55, -0.15]    ## blue矛头架远端
+  c01: [0.0, -0.15]    ## blue矛头架贴场地最边缘
+  c02: [0.0, -2.0]    ## blue_r2启动区处边缘点
+
+  # c01: [0.0, 1.2]
+  # c11: [1.2, 1.2]
+  # c21: [2.4, 1.2]
+
+wall_pool:
+  shelf_wall:
+    from: c00
+    to: c01
+    enabled: true
+  edge_wall:
+    from: c01
+    to: c02
+    enabled: true
+
+  # east_00:
+  #   from: c10
+  #   to: c11
+  #   enabled: true
+  # north_00:
+  #   from: c01
+  #   to: c11
+  #   enabled: true
+  # south_10:
+  #   from: c10
+  #   to: c20
+  #   enabled: true
+  # north_10:
+  #   from: c11
+  #   to: c21
+  #   enabled: true
+  # east_10:
+  #   from: c20
+  #   to: c21
+  #   enabled: true
+
+wall_pair_candidates:
+  spear_region_yaw-90:
+    x_wall:
+      wall: shelf_wall
+      role: rear
+    side_wall:
+      wall: edge_wall
+      role: right
+    corner_world_pose:
+      x: 0.0
+      y: -0.15
+      yaw_deg: -90.0
+      
+
+
+  # cell00_rear_left:
+  #   x_wall:
+  #     wall: north_00
+  #     role: rear
+  #   side_wall:
+  #     wall: west_00
+  #     role: left
+  #   corner_world_pose:
+  #     x: 0.0
+  #     y: 1.2
+  #     yaw_deg: 180.0
+
+  # cell00_rear_right:
+  #   x_wall:
+  #     wall: north_00
+  #     role: rear
+  #   side_wall:
+  #     wall: east_00
+  #     role: right
+  #   corner_world_pose:
+  #     x: 1.2
+  #     y: 1.2
+  #     yaw_deg: 180.0
+
+  # cell10_front_left:
+  #   x_wall:
+  #     wall: south_10
+  #     role: front
+  #   side_wall:
+  #     wall: east_00
+  #     role: left
+  #   corner_world_pose:
+  #     x: 1.2
+  #     y: 0.0
+  #     yaw_deg: 0.0
+
+  # cell10_front_right:
+  #   x_wall:
+  #     wall: south_10
+  #     role: front
+  #   side_wall:
+  #     wall: east_10
+  #     role: right
+  #   corner_world_pose:
+  #     x: 2.4
+  #     y: 0.0
+  #     yaw_deg: 0.0
+
+scene_profiles:
+  mode_a:
+    constraints:
+      orthogonal_required: true
+      expected_span_m: 1.2
+    wall_selector:
+      yaw_tolerance_deg: 5.0
+      regions:
+        - name: spear_region_yaw-90
+          x_range: [0.36, 1.4]       ## 距离矛头架两侧边缘10mm
+          y_range: [-1.4, -0.15]
+          yaw_deg: -90.0
+          active_wall_pair: spear_region_yaw-90
+          priority: 100
+          
+          
+          
+   
+        # - name: spear_region_yaw180
+        #   x: 0.90
+        #   y: 0.30
+        #   yaw_deg: 180.0
+        #   max_lidar_distance_to_center_m: 0.45
+        #   active_wall_pair: spear_region_yaw180
+        #   priority: 100
+        # - name: cell_00_rear_left
+        #   x: 0.30
+        #   y: 0.90
+        #   yaw_deg: 180.0
+        #   max_lidar_distance_to_center_m: 0.45
+        #   active_wall_pair: cell00_rear_left
+        #   priority: 100
+        # - name: cell_00_rear_right
+        #   x: 0.90
+        #   y: 0.90
+        #   yaw_deg: 180.0
+        #   max_lidar_distance_to_center_m: 0.45
+        #   active_wall_pair: cell00_rear_right
+        #   priority: 100
+        # - name: cell_10_front_left
+        #   x: 1.50
+        #   y: 0.30
+        #   yaw_deg: 0.0
+        #   max_lidar_distance_to_center_m: 0.45
+        #   active_wall_pair: cell10_front_left
+        #   priority: 100
+        # - name: cell_10_front_right
+        #   x: 2.10
+        #   y: 0.30
+        #   yaw_deg: 0.0
+        #   max_lidar_distance_to_center_m: 0.45
+        #   active_wall_pair: cell10_front_right
+        #   priority: 100
+    solver:
+      min_valid_corner_beams: 3
+      max_theta_abs_deg: 45.0
+      wall_hit_tolerance_m: 0.05
+      wall_extent_margin_m: 0.08
+      max_correction_xy_m: 0.15
+      max_correction_yaw_deg: 10.0
+      residual_thresh_m: 0.03

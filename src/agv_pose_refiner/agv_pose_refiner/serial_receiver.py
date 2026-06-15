@@ -1,0 +1,702 @@
+from __future__ import annotations
+
+import math
+import threading
+import time
+from collections import deque
+from typing import Any, Deque, Dict, List, Optional, Tuple
+
+from rclpy.duration import Duration
+from rclpy.node import Node
+from rclpy.time import Time
+
+from .common import (
+    SENSOR_ORDER,
+    STP23L_DATA_COMMAND,
+    STP23L_DATA_FRAME_LEN,
+    STP23L_HEADER,
+    STP23L_INVALID_DISTANCE_MM,
+    STP23L_QUERY_COMMAND,
+    STP23L_QUERY_FRAME_LEN,
+    BoardFrame,
+    RangeFrame,
+    SensorMount,
+    SerialSensorMapping,
+    abs_time_diff_ms,
+    coerce_bool,
+    crc16_modbus,
+)
+
+try:
+    import serial
+    from serial import SerialException
+except ImportError:  # pragma: no cover - runtime dependency
+    serial = None
+    SerialException = Exception
+
+
+class SerialReceiveLayer:
+    def __init__(
+        self,
+        node: Node,
+        sensor_mounts: Dict[str, SensorMount],
+        serial_cfg: Dict[str, Any],
+        range_buffer_ms: float,
+    ) -> None:
+        self._node = node
+        self._logger = node.get_logger()
+        self._clock = node.get_clock()
+        self._sensor_mounts = sensor_mounts
+        self._range_buffer_ms = float(range_buffer_ms)
+
+        self.serial_port = str(serial_cfg.get("port", "COM3"))
+        self.serial_baudrate = int(serial_cfg.get("baudrate", 115200))
+        self.serial_timeout_sec = float(serial_cfg.get("timeout_sec", 0.02))
+        self.serial_min_publish_interval_ms = float(
+            serial_cfg.get("min_publish_interval_ms", 5.0)
+        )
+        self.serial_poll_rate_hz = float(serial_cfg.get("poll_rate_hz", 100.0))
+        self.serial_response_timeout_sec = float(
+            serial_cfg.get("response_timeout_sec", 0.008)
+        )
+        self.serial_decode_log_enabled = coerce_bool(
+            serial_cfg.get("decode_log_enabled", True)
+        )
+        self.serial_decode_log_interval_ms = max(
+            0.0, float(serial_cfg.get("decode_log_interval_ms", 500.0))
+        )
+        self.serial_expect_matching_device_id = coerce_bool(
+            serial_cfg.get("expect_matching_device_id", True)
+        )
+        self.serial_sensor_map = self._parse_serial_sensor_map(serial_cfg)
+        self.serial_query_device_ids = self._parse_serial_query_device_ids(serial_cfg)
+
+        self._range_buffer: Deque[RangeFrame] = deque()
+        self._range_buffer_lock = threading.Lock()
+        self._latest_serial_ranges_m: Dict[str, float] = {
+            name: float("nan") for name in SENSOR_ORDER
+        }
+        self._latest_serial_valid: Dict[str, bool] = {
+            name: False for name in SENSOR_ORDER
+        }
+        self._last_serial_frame_stamp: Optional[Time] = None
+
+        self._parser_condition = threading.Condition()
+        self._pending_board_frames: Dict[int, BoardFrame] = {}
+        self._latest_board_frames: Dict[int, BoardFrame] = {}
+        self._last_decode_log_stamp_ns_by_device: Dict[int, int] = {}
+        self._serial_byte_buffer = bytearray()
+
+        self._serial_thread: Optional[threading.Thread] = None
+        self._serial_rx_thread: Optional[threading.Thread] = None
+        self._serial_stop_event = threading.Event()
+        self._serial_connection_lost = threading.Event()
+        self._serial_port_handle: Any = None
+
+    def start(self) -> None:
+        if serial is None:
+            raise RuntimeError(
+                "pyserial is required for serial STP23L input but is not installed."
+            )
+        if self._serial_thread is not None:
+            return
+        self._serial_thread = threading.Thread(
+            target=self._serial_supervisor_loop,
+            name="stp23l_serial_supervisor",
+            daemon=True,
+        )
+        self._serial_thread.start()
+
+    def stop(self) -> None:
+        self._serial_stop_event.set()
+        self._serial_connection_lost.set()
+        with self._parser_condition:
+            self._parser_condition.notify_all()
+        if self._serial_port_handle is not None:
+            try:
+                self._serial_port_handle.close()
+            except Exception:
+                pass
+        if self._serial_rx_thread is not None and self._serial_rx_thread.is_alive():
+            self._serial_rx_thread.join(timeout=1.0)
+        if self._serial_thread is not None and self._serial_thread.is_alive():
+            self._serial_thread.join(timeout=1.0)
+        self._serial_rx_thread = None
+        self._serial_thread = None
+
+    def snapshot_frames(self) -> List[RangeFrame]:
+        with self._range_buffer_lock:
+            return list(self._range_buffer)
+
+    def snapshot_status(self, now: Optional[Time] = None) -> Dict[str, Any]:
+        snapshot_now = now or self._clock.now()
+        with self._parser_condition:
+            device_frames = {
+                str(device_id): self._build_device_status_snapshot(
+                    board_frame=board_frame,
+                    now=snapshot_now,
+                )
+                for device_id, board_frame in sorted(self._latest_board_frames.items())
+            }
+            logical_sensors = {
+                sensor_name: self._build_logical_sensor_status_snapshot(sensor_name)
+                for sensor_name in SENSOR_ORDER
+            }
+            latest_range_frame_age_ms = None
+            if self._last_serial_frame_stamp is not None:
+                latest_range_frame_age_ms = abs_time_diff_ms(
+                    snapshot_now, self._last_serial_frame_stamp
+                )
+
+        return {
+            "has_data": bool(device_frames),
+            "query_device_ids": list(self.serial_query_device_ids),
+            "latest_range_frame_age_ms": latest_range_frame_age_ms,
+            "device_frames": device_frames,
+            "logical_sensors": logical_sensors,
+        }
+
+    def _serial_supervisor_loop(self) -> None:
+        while not self._serial_stop_event.is_set():
+            self._serial_connection_lost.clear()
+            try:
+                with serial.Serial(
+                    port=self.serial_port,
+                    baudrate=self.serial_baudrate,
+                    timeout=self.serial_timeout_sec,
+                ) as handle:
+                    self._serial_port_handle = handle
+                    self._prepare_serial_handle(handle)
+                    self._start_serial_rx_thread(handle)
+                    self._logger.info(
+                        f"Opened STP23L serial port {self.serial_port} at "
+                        f"{self.serial_baudrate} bps"
+                    )
+                    while (
+                        not self._serial_stop_event.is_set()
+                        and not self._serial_connection_lost.is_set()
+                    ):
+                        self._poll_serial_devices_once(handle)
+            except SerialException as exc:
+                self._logger.error(
+                    f"Serial port {self.serial_port} open/write failed: {exc}"
+                )
+                self._serial_stop_event.wait(1.0)
+            except Exception as exc:  # pragma: no cover - defensive runtime path
+                self._logger.error(f"Unexpected serial supervisor failure: {exc}")
+                self._serial_stop_event.wait(1.0)
+            finally:
+                self._serial_connection_lost.set()
+                with self._parser_condition:
+                    self._parser_condition.notify_all()
+                self._serial_port_handle = None
+                if self._serial_rx_thread is not None and self._serial_rx_thread.is_alive():
+                    self._serial_rx_thread.join(timeout=1.0)
+                self._serial_rx_thread = None
+
+    def _start_serial_rx_thread(self, handle: Any) -> None:
+        self._serial_rx_thread = threading.Thread(
+            target=self._serial_rx_loop,
+            args=(handle,),
+            name="stp23l_serial_rx",
+            daemon=True,
+        )
+        self._serial_rx_thread.start()
+
+    def _serial_rx_loop(self, handle: Any) -> None:
+        try:
+            while (
+                not self._serial_stop_event.is_set()
+                and not self._serial_connection_lost.is_set()
+            ):
+                chunk = self._read_serial_chunk(handle)
+                if not chunk:
+                    continue
+                with self._parser_condition:
+                    self._serial_byte_buffer.extend(chunk)
+                    produced_frame = self._drain_serial_buffer_locked()
+                    if produced_frame:
+                        self._parser_condition.notify_all()
+        except SerialException as exc:
+            if not self._serial_stop_event.is_set():
+                self._logger.error(
+                    f"Serial port {self.serial_port} read failed: {exc}"
+                )
+            self._serial_connection_lost.set()
+        except Exception as exc:  # pragma: no cover - defensive runtime path
+            if not self._serial_stop_event.is_set():
+                self._logger.error(f"Unexpected serial RX failure: {exc}")
+            self._serial_connection_lost.set()
+        finally:
+            with self._parser_condition:
+                self._parser_condition.notify_all()
+
+    def _read_serial_chunk(self, handle: Any) -> bytes:
+        read_size = 1
+        try:
+            available = int(getattr(handle, "in_waiting", 0) or 0)
+            if available > 0:
+                read_size = min(available, 256)
+        except Exception:
+            pass
+        return handle.read(read_size)
+
+    def _prepare_serial_handle(self, handle: Any) -> None:
+        with self._parser_condition:
+            self._serial_byte_buffer.clear()
+            self._pending_board_frames.clear()
+            self._latest_board_frames.clear()
+            self._last_decode_log_stamp_ns_by_device.clear()
+        for reset_name in ("reset_input_buffer", "reset_output_buffer"):
+            reset_fn = getattr(handle, reset_name, None)
+            if reset_fn is None:
+                continue
+            try:
+                reset_fn()
+            except Exception as exc:  # pragma: no cover - driver-specific
+                self._logger.warn(
+                    f"Serial {reset_name} failed on {self.serial_port}: {exc}"
+                )
+
+    def _poll_serial_devices_once(self, handle: Any) -> None:
+        if not self.serial_query_device_ids:
+            self._serial_stop_event.wait(0.1)
+            return
+
+        cycle_start = time.monotonic()
+        self._clear_pending_query_responses()
+        cycle_board_frames: Dict[int, BoardFrame] = {}
+        for device_id in self.serial_query_device_ids:
+            if self._serial_stop_event.is_set() or self._serial_connection_lost.is_set():
+                return
+            handle.write(self._build_query_frame(device_id))
+            handle.flush()
+            board_frame = self._wait_for_query_response(device_id)
+            if board_frame is None:
+                buffered_len, pending_ids = self._snapshot_rx_debug_state()
+                self._logger.warn(
+                    f"No STP23L response for device_id={device_id} within "
+                    f"{self.serial_response_timeout_sec:.3f}s "
+                    f"(buffered={buffered_len}B, pending={pending_ids})"
+                )
+                continue
+            cycle_board_frames[device_id] = board_frame
+
+        if len(cycle_board_frames) == len(self.serial_query_device_ids):
+            publish_stamp = max(
+                frame.rx_stamp.nanoseconds for frame in cycle_board_frames.values()
+            )
+            stamp = Time(nanoseconds=publish_stamp, clock_type=self._clock.clock_type)
+            self._maybe_publish_cycle_range_frame(
+                stamp=stamp,
+                cycle_board_frames=cycle_board_frames,
+            )
+
+        if self.serial_poll_rate_hz <= 0.0:
+            return
+        cycle_period_sec = 1.0 / self.serial_poll_rate_hz
+        elapsed_sec = time.monotonic() - cycle_start
+        remaining_sec = cycle_period_sec - elapsed_sec
+        if remaining_sec > 0.0:
+            self._serial_stop_event.wait(remaining_sec)
+
+    def _build_query_frame(self, device_id: int) -> bytes:
+        payload = bytes([0x5A, 0xA5, STP23L_QUERY_COMMAND, device_id & 0xFF])
+        crc = crc16_modbus(payload)
+        return payload + crc.to_bytes(2, byteorder="little")
+
+    def _wait_for_query_response(self, expected_device_id: int) -> Optional[BoardFrame]:
+        deadline = time.monotonic() + self.serial_response_timeout_sec
+        with self._parser_condition:
+            while (
+                not self._serial_stop_event.is_set()
+                and not self._serial_connection_lost.is_set()
+            ):
+                board_frame = self._take_pending_board_frame_locked(expected_device_id)
+                if board_frame is not None:
+                    return board_frame
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    return None
+                self._parser_condition.wait(timeout=remaining)
+        return None
+
+    def _snapshot_rx_debug_state(self) -> Tuple[int, List[int]]:
+        with self._parser_condition:
+            return len(self._serial_byte_buffer), sorted(self._pending_board_frames.keys())
+
+    def _clear_pending_query_responses(self) -> None:
+        with self._parser_condition:
+            for device_id in self.serial_query_device_ids:
+                self._pending_board_frames.pop(device_id, None)
+
+    def _take_pending_board_frame_locked(self, device_id: int) -> Optional[BoardFrame]:
+        return self._pending_board_frames.pop(device_id, None)
+
+    def _drain_serial_buffer_locked(self) -> bool:
+        produced_frame = False
+        while True:
+            header_index = self._serial_byte_buffer.find(STP23L_HEADER)
+            if header_index < 0:
+                if len(self._serial_byte_buffer) > STP23L_DATA_FRAME_LEN:
+                    del self._serial_byte_buffer[:-1]
+                return produced_frame
+            if header_index > 0:
+                del self._serial_byte_buffer[:header_index]
+            if len(self._serial_byte_buffer) < STP23L_QUERY_FRAME_LEN:
+                return produced_frame
+
+            command = self._serial_byte_buffer[2]
+            if command == STP23L_QUERY_COMMAND:
+                if len(self._serial_byte_buffer) < STP23L_QUERY_FRAME_LEN:
+                    return produced_frame
+                if self._is_valid_query_echo(bytes(self._serial_byte_buffer[:6])):
+                    del self._serial_byte_buffer[:STP23L_QUERY_FRAME_LEN]
+                else:
+                    del self._serial_byte_buffer[:1]
+                continue
+
+            if command != STP23L_DATA_COMMAND:
+                del self._serial_byte_buffer[:1]
+                continue
+
+            if len(self._serial_byte_buffer) < STP23L_DATA_FRAME_LEN:
+                return produced_frame
+
+            frame_bytes = bytes(self._serial_byte_buffer[:STP23L_DATA_FRAME_LEN])
+            payload_crc = int.from_bytes(frame_bytes[14:16], byteorder="little")
+            expected_crc = crc16_modbus(frame_bytes[:14])
+            if payload_crc != expected_crc:
+                self._logger.warn(
+                    "Dropped STP23L frame due to CRC mismatch "
+                    f"(expected=0x{expected_crc:04X}, got=0x{payload_crc:04X})"
+                )
+                del self._serial_byte_buffer[:1]
+                continue
+
+            del self._serial_byte_buffer[:STP23L_DATA_FRAME_LEN]
+            board_frame = self._decode_stp23l_frame(frame_bytes)
+            self._record_board_frame_locked(board_frame)
+            produced_frame = True
+
+    def _is_valid_query_echo(self, frame_bytes: bytes) -> bool:
+        if len(frame_bytes) != STP23L_QUERY_FRAME_LEN:
+            return False
+        payload_crc = int.from_bytes(frame_bytes[4:6], byteorder="little")
+        expected_crc = crc16_modbus(frame_bytes[:4])
+        return payload_crc == expected_crc
+
+    def _record_board_frame_locked(self, board_frame: BoardFrame) -> None:
+        self._pending_board_frames[board_frame.device_id] = board_frame
+        self._latest_board_frames[board_frame.device_id] = board_frame
+        self._ingest_board_frame(board_frame)
+        self._log_decoded_board_frame_locked(board_frame)
+
+    def _decode_stp23l_frame(self, frame_bytes: bytes) -> BoardFrame:
+        rx_stamp = self._clock.now()
+        distances_mm = [
+            int.from_bytes(frame_bytes[6:8], byteorder="little"),
+            int.from_bytes(frame_bytes[8:10], byteorder="little"),
+            int.from_bytes(frame_bytes[10:12], byteorder="little"),
+            int.from_bytes(frame_bytes[12:14], byteorder="little"),
+        ]
+        return BoardFrame(
+            rx_stamp=rx_stamp,
+            device_id=int(frame_bytes[3]),
+            report_type=int(frame_bytes[4]),
+            status_bits=int(frame_bytes[5]),
+            distances_mm=distances_mm,
+        )
+
+    def _log_decoded_board_frame_locked(self, board_frame: BoardFrame) -> None:
+        mappings = [
+            mapping
+            for mapping in self.serial_sensor_map.values()
+            if mapping.device_id == board_frame.device_id
+        ]
+        if not mappings:
+            self._logger.warn(
+                "Decoded STP23L frame from unmapped "
+                f"device_id={board_frame.device_id} status=0x{board_frame.status_bits:02X}"
+            )
+            return
+
+        usable_count = sum(
+            1 for mapping in mappings if self._is_logical_sensor_usable(mapping, board_frame)
+        )
+        should_log_info = (
+            self.serial_decode_log_enabled
+            and self._should_emit_decode_log_locked(board_frame.device_id, board_frame.rx_stamp)
+        )
+        if not should_log_info and usable_count > 0:
+            return
+
+        message = self._format_decoded_board_frame_log(board_frame, mappings)
+        if usable_count == 0:
+            self._logger.warn(
+                "Decoded STP23L frame but all mapped sensors are unusable: " + message
+            )
+            return
+        self._logger.info("Decoded STP23L frame: " + message)
+
+    def _should_emit_decode_log_locked(self, device_id: int, stamp: Time) -> bool:
+        if self.serial_decode_log_interval_ms <= 0.0:
+            self._last_decode_log_stamp_ns_by_device[device_id] = stamp.nanoseconds
+            return True
+        last_stamp_ns = self._last_decode_log_stamp_ns_by_device.get(device_id)
+        if last_stamp_ns is None:
+            self._last_decode_log_stamp_ns_by_device[device_id] = stamp.nanoseconds
+            return True
+        if (stamp.nanoseconds - last_stamp_ns) / 1e6 < self.serial_decode_log_interval_ms:
+            return False
+        self._last_decode_log_stamp_ns_by_device[device_id] = stamp.nanoseconds
+        return True
+
+    def _format_decoded_board_frame_log(
+        self,
+        board_frame: BoardFrame,
+        mappings: List[SerialSensorMapping],
+    ) -> str:
+        slot_summary = ", ".join(
+            f"s{slot_index + 1}={self._format_raw_mm(raw_mm)}/"
+            f"{'on' if board_frame.status_bits & (1 << slot_index) else 'off'}"
+            for slot_index, raw_mm in enumerate(board_frame.distances_mm)
+        )
+        mapped_summary = ", ".join(
+            self._format_mapping_summary(mapping, board_frame) for mapping in mappings
+        )
+        logical_snapshot = ", ".join(
+            f"{self._logical_sensor_short_name(name)}="
+            f"{'Y' if self._latest_serial_valid[name] else 'N'}"
+            for name in SENSOR_ORDER
+        )
+        report_type_name = self._report_type_name(board_frame.report_type)
+        return (
+            f"device_id={board_frame.device_id} "
+            f"report={report_type_name} "
+            f"status=0x{board_frame.status_bits:02X} "
+            f"slots=[{slot_summary}] "
+            f"mapped=[{mapped_summary}] "
+            f"logical_valid=[{logical_snapshot}]"
+        )
+
+    def _format_mapping_summary(
+        self,
+        mapping: SerialSensorMapping,
+        board_frame: BoardFrame,
+    ) -> str:
+        raw_mm = board_frame.distances_mm[mapping.slot_index]
+        online = bool(board_frame.status_bits & (1 << mapping.slot_index))
+        serial_valid = online and raw_mm != STP23L_INVALID_DISTANCE_MM
+        usable = self._is_logical_sensor_usable(mapping, board_frame)
+        return (
+            f"{mapping.logical_sensor}@s{mapping.slot_index + 1}="
+            f"{self._format_raw_mm(raw_mm)} "
+            f"serial={'Y' if serial_valid else 'N'} "
+            f"usable={'Y' if usable else 'N'}"
+        )
+
+    def _is_logical_sensor_usable(
+        self,
+        mapping: SerialSensorMapping,
+        board_frame: BoardFrame,
+    ) -> bool:
+        raw_mm = board_frame.distances_mm[mapping.slot_index]
+        online = bool(board_frame.status_bits & (1 << mapping.slot_index))
+        if not online or raw_mm == STP23L_INVALID_DISTANCE_MM:
+            return False
+        mount = self._sensor_mounts[mapping.logical_sensor]
+        value_m = float(raw_mm) / 1000.0
+        return math.isfinite(value_m) and mount.min_range_m <= value_m <= mount.max_range_m
+
+    def _format_raw_mm(self, raw_mm: int) -> str:
+        if raw_mm == STP23L_INVALID_DISTANCE_MM:
+            return "FFFF"
+        return str(raw_mm)
+
+    def _logical_sensor_short_name(self, sensor_name: str) -> str:
+        abbreviations = {
+            "front_center": "FC",
+            "rear_center": "RC",
+            "left_front": "LF",
+            "left_rear": "LR",
+            "right_front": "RF",
+            "right_rear": "RR",
+        }
+        return abbreviations.get(sensor_name, sensor_name)
+
+    def _report_type_name(self, report_type: int) -> str:
+        if report_type == 0x00:
+            return "active"
+        if report_type == 0x01:
+            return "query"
+        return f"0x{report_type:02X}"
+
+    def _build_device_status_snapshot(
+        self,
+        *,
+        board_frame: BoardFrame,
+        now: Time,
+    ) -> Dict[str, Any]:
+        slots = []
+        for slot_index, raw_mm in enumerate(board_frame.distances_mm):
+            online = bool(board_frame.status_bits & (1 << slot_index))
+            serial_valid = online and raw_mm != STP23L_INVALID_DISTANCE_MM
+            slots.append(
+                {
+                    "slot_index": slot_index,
+                    "raw_mm": raw_mm,
+                    "online": online,
+                    "serial_valid": serial_valid,
+                    "range_m": (
+                        float(raw_mm) / 1000.0 if serial_valid else None
+                    ),
+                }
+            )
+        return {
+            "device_id": board_frame.device_id,
+            "age_ms": abs_time_diff_ms(now, board_frame.rx_stamp),
+            "report_type": board_frame.report_type,
+            "report_name": self._report_type_name(board_frame.report_type),
+            "status_bits": board_frame.status_bits,
+            "slots": slots,
+        }
+
+    def _build_logical_sensor_status_snapshot(
+        self,
+        sensor_name: str,
+    ) -> Dict[str, Any]:
+        mapping = self.serial_sensor_map[sensor_name]
+        board_frame = self._latest_board_frames.get(mapping.device_id)
+        raw_mm: Optional[int] = None
+        online: Optional[bool] = None
+        serial_valid = False
+        usable = False
+        if board_frame is not None:
+            raw_mm = board_frame.distances_mm[mapping.slot_index]
+            online = bool(board_frame.status_bits & (1 << mapping.slot_index))
+            serial_valid = online and raw_mm != STP23L_INVALID_DISTANCE_MM
+            usable = self._is_logical_sensor_usable(mapping, board_frame)
+
+        range_m = self._latest_serial_ranges_m[sensor_name]
+        return {
+            "device_id": mapping.device_id,
+            "slot_index": mapping.slot_index,
+            "raw_mm": raw_mm,
+            "online": online,
+            "serial_valid": serial_valid,
+            "range_m": float(range_m) if math.isfinite(range_m) else None,
+            "usable": usable,
+        }
+
+    def _ingest_board_frame(self, board_frame: BoardFrame) -> None:
+        for mapping in self.serial_sensor_map.values():
+            if mapping.device_id != board_frame.device_id:
+                continue
+            slot_index = mapping.slot_index
+            raw_mm = board_frame.distances_mm[slot_index]
+            online = bool(board_frame.status_bits & (1 << slot_index))
+            self._latest_serial_ranges_m[mapping.logical_sensor] = float(raw_mm) / 1000.0
+            self._latest_serial_valid[mapping.logical_sensor] = (
+                online and raw_mm != STP23L_INVALID_DISTANCE_MM
+            )
+
+    def _maybe_publish_cycle_range_frame(
+        self,
+        *,
+        stamp: Time,
+        cycle_board_frames: Dict[int, BoardFrame],
+    ) -> None:
+        if not self._should_publish_serial_frame(stamp):
+            return
+        frame = self._build_range_frame_from_cycle(stamp, cycle_board_frames)
+        self._append_range_frame(frame)
+        self._last_serial_frame_stamp = stamp
+
+    def _should_publish_serial_frame(self, stamp: Time) -> bool:
+        if self._last_serial_frame_stamp is None:
+            return True
+        min_interval = Duration(
+            nanoseconds=int(self.serial_min_publish_interval_ms * 1e6)
+        )
+        return (stamp - self._last_serial_frame_stamp) >= min_interval
+
+    def _build_range_frame_from_cycle(
+        self,
+        stamp: Time,
+        cycle_board_frames: Dict[int, BoardFrame],
+    ) -> RangeFrame:
+        ranges: Dict[str, float] = {}
+        valid: Dict[str, bool] = {}
+        for name in SENSOR_ORDER:
+            mapping = self.serial_sensor_map[name]
+            mount = self._sensor_mounts[name]
+            board_frame = cycle_board_frames.get(mapping.device_id)
+            if board_frame is None:
+                ranges[name] = float("nan")
+                valid[name] = False
+                continue
+            raw_mm = board_frame.distances_mm[mapping.slot_index]
+            value = float(raw_mm) / 1000.0
+            online = bool(board_frame.status_bits & (1 << mapping.slot_index))
+            serial_valid = online and raw_mm != STP23L_INVALID_DISTANCE_MM
+            ranges[name] = value
+            range_valid = (
+                math.isfinite(value)
+                and mount.min_range_m <= value <= mount.max_range_m
+            )
+            valid[name] = serial_valid and range_valid
+        return RangeFrame(stamp=stamp, ranges=ranges, valid=valid)
+
+    def _append_range_frame(self, frame: RangeFrame) -> None:
+        with self._range_buffer_lock:
+            self._range_buffer.append(frame)
+            newest_stamp = frame.stamp
+            while self._range_buffer:
+                oldest = self._range_buffer[0]
+                if abs_time_diff_ms(newest_stamp, oldest.stamp) <= self._range_buffer_ms:
+                    break
+                self._range_buffer.popleft()
+
+    def _parse_serial_sensor_map(
+        self, serial_cfg: Dict[str, Any]
+    ) -> Dict[str, SerialSensorMapping]:
+        sensor_map_cfg = serial_cfg.get("sensor_map", {})
+        missing = [name for name in SENSOR_ORDER if name not in sensor_map_cfg]
+        if missing:
+            raise RuntimeError(f"serial_input.sensor_map missing keys: {missing}")
+
+        parsed: Dict[str, SerialSensorMapping] = {}
+        used_pairs = set()
+        for logical_sensor in SENSOR_ORDER:
+            item = sensor_map_cfg[logical_sensor]
+            device_id = int(item["device_id"])
+            slot_index = int(item["slot_index"])
+            if slot_index < 0 or slot_index > 3:
+                raise RuntimeError(
+                    f"{logical_sensor} slot_index must be in [0, 3], got {slot_index}"
+                )
+            pair = (device_id, slot_index)
+            if pair in used_pairs:
+                raise RuntimeError(f"Duplicate serial sensor mapping for {pair}")
+            used_pairs.add(pair)
+            parsed[logical_sensor] = SerialSensorMapping(
+                logical_sensor=logical_sensor,
+                device_id=device_id,
+                slot_index=slot_index,
+            )
+        return parsed
+
+    def _parse_serial_query_device_ids(self, serial_cfg: Dict[str, Any]) -> List[int]:
+        configured = serial_cfg.get("query_device_ids")
+        if configured is None:
+            return sorted({mapping.device_id for mapping in self.serial_sensor_map.values()})
+        if not isinstance(configured, list) or not configured:
+            raise RuntimeError("serial_input.query_device_ids must be a non-empty list")
+        parsed = [int(item) for item in configured]
+        for device_id in parsed:
+            if device_id < 0 or device_id > 255:
+                raise RuntimeError(
+                    f"serial_input.query_device_ids contains invalid device id {device_id}"
+                )
+        return parsed

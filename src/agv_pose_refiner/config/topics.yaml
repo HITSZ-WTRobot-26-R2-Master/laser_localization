@@ -1,0 +1,48 @@
+input_topics:
+  lidar_pose_topic: /to_master_control
+  lidar_input_format: custom_pose_fields
+  lidar_message_type: interfaces.msg.R2Pose
+
+serial_input:
+  port: /dev/ttyUSB0
+  baudrate: 115200
+  timeout_sec: 0.02
+  min_publish_interval_ms: 5.0
+  poll_rate_hz: 100.0
+  response_timeout_sec: 0.02
+  decode_log_enabled: true
+  decode_log_interval_ms: 0
+  expect_matching_device_id: true
+  query_device_ids: [1, 2]
+  sensor_map:
+    front_center:
+      device_id: 2
+      slot_index: 1
+    rear_center:
+      device_id: 1
+      slot_index: 3
+    left_front:
+      device_id: 2
+      slot_index: 0
+    left_rear:
+      device_id: 1
+      slot_index: 2
+    right_front:
+      device_id: 2
+      slot_index: 2
+    right_rear:
+      device_id: 1
+      slot_index: 0
+
+output_topics:
+  refined_pose_topic: /laser_pose
+  status_topic: /laser_status
+  tf_parent_frame: map
+  tf_child_frame: base_link
+
+timing:
+  range_buffer_ms: 300.0
+  max_range_lidar_time_diff_ms: 200.0
+  enable_range_interpolation: true
+  max_interpolation_gap_ms: 250.0
+  max_lidar_transport_delay_ms: 200.0

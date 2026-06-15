@@ -1,0 +1,31 @@
+sensor_mounts:
+  front_center:
+    pos: [0.25998, 0.000]
+    dir: [1.0, 0.0]
+    min_range_m: 0.03
+    max_range_m: 2.00
+  rear_center:
+    pos: [-0.25998, 0.000]
+    dir: [-1.0, 0.0]
+    min_range_m: 0.03
+    max_range_m: 2.00
+  left_front:
+    pos: [0.22908, 0.27493]
+    dir: [0.0, 1.0]
+    min_range_m: 0.03
+    max_range_m: 2.00
+  left_rear:
+    pos: [-0.22908, 0.27493]
+    dir: [0.0, 1.0]
+    min_range_m: 0.03
+    max_range_m: 2.00
+  right_front:
+    pos: [0.22908, -0.27493]
+    dir: [0.0, -1.0]
+    min_range_m: 0.03
+    max_range_m: 2.00
+  right_rear:
+    pos: [-0.22908, -0.27493]
+    dir: [0.0, -1.0]
+    min_range_m: 0.03
+    max_range_m: 2.00
