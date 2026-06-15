@@ -828,7 +828,7 @@ class PoseSolveLayer:
             },
         )
 
-        residual_m, same_wall_conflict, target_hits = self._evaluate_solution(
+        residual_m, target_hits = self._evaluate_solution(
             pose_x=x_map,
             pose_y=y_map,
             pose_yaw_deg=yaw_map_deg,
@@ -867,7 +867,6 @@ class PoseSolveLayer:
             residual_debug={
                 "mean_residual_m": residual_m,
                 "target_hit_count": target_hits,
-                "same_wall_conflict": 1.0 if same_wall_conflict else 0.0,
             },
         )
         residual_thresh_m = float(solver_cfg.get("residual_thresh_m", 0.03))
@@ -879,11 +878,9 @@ class PoseSolveLayer:
             residual_debug={
                 "mean_residual_m": residual_m,
                 "target_hit_count": target_hits,
-                "same_wall_conflict": 1.0 if same_wall_conflict else 0.0,
                 "residual_thresh_m": residual_thresh_m,
                 "min_valid_corner_beams": float(min_valid_corner_beams),
                 "validation_gates_block_pose": 0.0,
-                "would_fail_same_wall_conflict_gate": 1.0 if same_wall_conflict else 0.0,
                 "would_fail_target_hit_gate": (
                     1.0 if target_hits < min_valid_corner_beams else 0.0
                 ),
@@ -1020,7 +1017,7 @@ class PoseSolveLayer:
         wall_pair: WallPair,
         beam_selection: BeamSelection,
         solver_cfg: Dict[str, Any],
-    ) -> Tuple[float, bool, int]:
+    ) -> Tuple[float, int]:
         wall_hit_tolerance_m = float(solver_cfg.get("wall_hit_tolerance_m", 0.05))
         wall_extent_margin_m = float(solver_cfg.get("wall_extent_margin_m", 0.08))
         x_wall = self.walls[wall_pair.x_wall_name]
@@ -1033,9 +1030,8 @@ class PoseSolveLayer:
         ]
 
         residuals: List[float] = []
-        same_wall_conflict = False
         target_hits = 0
-        for beam_name, target_wall, other_wall in checks:
+        for beam_name, target_wall, _other_wall in checks:
             hit_x, hit_y = self._beam_hit_point(
                 pose_x=pose_x,
                 pose_y=pose_y,
@@ -1049,24 +1045,12 @@ class PoseSolveLayer:
                 target_wall,
                 wall_extent_margin_m,
             )
-            other_distance, other_in_extent = self._point_to_wall_distance(
-                hit_x,
-                hit_y,
-                other_wall,
-                wall_extent_margin_m,
-            )
             if target_distance <= wall_hit_tolerance_m and target_in_extent:
                 target_hits += 1
             residuals.append(target_distance)
-            if (
-                other_distance <= wall_hit_tolerance_m
-                and other_in_extent
-                and other_distance <= target_distance + 1e-6
-            ):
-                same_wall_conflict = True
 
         mean_residual = sum(residuals) / max(len(residuals), 1)
-        return mean_residual, same_wall_conflict, target_hits
+        return mean_residual, target_hits
 
     def _beam_hit_point(
         self,

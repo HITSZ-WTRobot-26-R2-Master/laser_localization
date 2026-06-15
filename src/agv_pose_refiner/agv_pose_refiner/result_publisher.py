@@ -359,7 +359,6 @@ class ResultPublishLayer:
             "NO_REGION_MATCHED": "当前粗定位不在已配置的laser解算区域内",
             "INSUFFICIENT_VALID_BEAMS": "参与角点解算的有效激光束数量不足",
             "THETA_EXCEEDS_LIMIT": "侧向双束推算出的夹角超出允许范围",
-            "SAME_WALL_CONFLICT": "解算结果与目标墙体的命中关系冲突",
             "RESIDUAL_TOO_LARGE": "解算残差过大，或命中目标墙数量不足",
         }
         return reason_text_by_code.get(reason_code, reason_code)
