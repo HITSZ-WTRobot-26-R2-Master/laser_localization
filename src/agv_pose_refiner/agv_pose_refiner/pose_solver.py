@@ -776,9 +776,12 @@ class PoseSolveLayer:
 
         x_corner = sx * (r_x + d_x) * c
         y_corner = sy * (d_y + 0.5 * (r_sf + r_sr)) * c
+        # theta_side_deg is measured around the vehicle forward axis in the
+        # corner-local frame. A rear wall means local +x aligns with forward;
+        # a front wall means forward points toward local -x and needs +180 deg.
         yaw_corner_deg = (
             theta_side_deg
-            if beam_selection.x_beam_role == "front"
+            if beam_selection.x_beam_role == "rear"
             else wrap_deg(theta_side_deg + 180.0)
         )
 
