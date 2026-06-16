@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import math
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from geometry_msgs.msg import TransformStamped
 from std_msgs.msg import String
@@ -177,7 +178,7 @@ class ResultPublishLayer:
             status["yaw_in_corner_deg"] = result.yaw_in_corner_deg
 
         status_msg = String()
-        status_msg.data = self._format_status_text(status)
+        status_msg.data = json.dumps(status, allow_nan=False, default=str)
         self._status_pub.publish(status_msg)
 
     def _build_output_pose_msg(self, coarse: CoarsePose, result: SolveResult) -> Any:
@@ -235,115 +236,6 @@ class ResultPublishLayer:
                 return None
             extracted[key] = value_float
         return extracted
-
-    def _format_status_text(self, status: Dict[str, Any]) -> str:
-        sections = ["================ /laser_status ================"]
-        used_keys: Set[str] = set()
-
-        summary_keys = [
-            "localized",
-            "state",
-            "pose_source",
-            "laser_pose_output",
-            "laser_pose_output_reason",
-            "laser_pose_output_reason_text",
-            "reason",
-            "in_solve_region",
-            "solve_attempted",
-            "solve_success",
-            "region_name",
-            "wall_pair_name",
-            "beam_mode",
-            "score",
-            "residual_m",
-            "prior_age_ms",
-            "valid_beam_count",
-            "usable_sensor_count",
-            "selected_beam_count",
-            "selected_valid_beam_count",
-            "target_hit_count",
-            "yaw_in_corner_deg",
-            "current_solver_beams",
-            "selected_beams",
-        ]
-        summary = {
-            key: status[key] for key in summary_keys if key in status
-        }
-        if summary:
-            self._append_section(sections, "summary", summary)
-            used_keys.update(summary.keys())
-
-        ordered_sections = [
-            "world_pose",
-            "corner_pose",
-            "corner_world_pose",
-            "coarse_pose",
-            "timing_debug",
-            "laser_decoded",
-            "region_debug",
-            "solver_debug",
-        ]
-        for key in ordered_sections:
-            if key not in status:
-                continue
-            self._append_section(sections, key, status[key])
-            used_keys.add(key)
-
-        for key, value in status.items():
-            if key in used_keys:
-                continue
-            self._append_section(sections, key, value)
-
-        return " || ".join(sections)
-
-    def _append_section(self, sections: List[str], title: str, value: Any) -> None:
-        parts: List[str] = []
-        self._append_value_lines(parts, value, prefix="")
-        body = " | ".join(parts) if parts else "<empty>"
-        sections.append(f"[{title}] {body}")
-
-    def _append_value_lines(self, parts: List[str], value: Any, prefix: str) -> None:
-        if isinstance(value, dict):
-            if not value:
-                parts.append(f"{prefix}<empty>" if prefix else "<empty>")
-                return
-            for key, item in value.items():
-                next_prefix = f"{prefix}.{key}" if prefix else key
-                if isinstance(item, (dict, list)):
-                    self._append_value_lines(parts, item, next_prefix)
-                else:
-                    parts.append(f"{next_prefix}={self._format_scalar(item)}")
-            return
-
-        if isinstance(value, list):
-            if not value:
-                parts.append(f"{prefix}=[]" if prefix else "[]")
-                return
-            for index, item in enumerate(value):
-                next_prefix = f"{prefix}[{index}]" if prefix else f"[{index}]"
-                if isinstance(item, (dict, list)):
-                    self._append_value_lines(parts, item, next_prefix)
-                else:
-                    parts.append(f"{next_prefix}={self._format_scalar(item)}")
-            return
-
-        parts.append(
-            f"{prefix}={self._format_scalar(value)}" if prefix else self._format_scalar(value)
-        )
-
-    def _format_scalar(self, value: Any) -> str:
-        if value is None:
-            return "None"
-        if isinstance(value, bool):
-            return "true" if value else "false"
-        if isinstance(value, float):
-            if math.isnan(value):
-                return "NaN"
-            if math.isinf(value):
-                return "Inf" if value > 0 else "-Inf"
-            rendered = f"{value:.6f}"
-            return rendered.rstrip("0").rstrip(".")
-        return str(value)
 
     def _laser_pose_output_reason_text(
         self,
