@@ -1,3 +1,6 @@
+# ⚠️ 注意：此文件中的部分参数可能被 /workspace/config/config.yaml 中的
+# agv_pose_refiner.ros__parameters 覆盖。运行时参数以 config.yaml 为准。
+
 input_topics:
   lidar_pose_topic: /to_master_control
   lidar_input_format: custom_pose_fields

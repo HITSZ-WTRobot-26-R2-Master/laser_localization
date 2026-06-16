@@ -36,10 +36,23 @@ class AgvPoseRefinerNode(Node):
         )
         self.declare_parameter("publish_tf", True)
 
+        # Deployment-tunable overrides (empty defaults defer to YAML values).
+        self.declare_parameter("lidar_pose_topic", "")
+        self.declare_parameter("laser_pose_topic", "")
+        self.declare_parameter("laser_status_topic", "")
+        self.declare_parameter("tf_parent_frame", "")
+        self.declare_parameter("tf_child_frame", "")
+        self.declare_parameter("serial_port", "")
+        self.declare_parameter("serial_baudrate", 0)
+        self.declare_parameter("world_frame_id", "")
+        self.declare_parameter("active_scene", "")
+
         topics_config = self._load_yaml(self.get_parameter("topics_config_path").value)
         sensors_config = self._load_yaml(self.get_parameter("sensors_config_path").value)
         solver_config = self._load_yaml(self.get_parameter("solver_config_path").value)
         publish_tf = coerce_bool(self.get_parameter("publish_tf").value)
+
+        self._apply_param_overrides(topics_config, solver_config)
 
         topics_in = topics_config.get("input_topics", {})
         topics_out = topics_config.get("output_topics", {})
@@ -115,6 +128,38 @@ class AgvPoseRefinerNode(Node):
         if not isinstance(data, dict):
             raise RuntimeError(f"YAML root must be a mapping: {path}")
         return data
+
+    def _apply_param_overrides(
+        self, topics_config: Dict[str, Any], solver_config: Dict[str, Any]
+    ) -> None:
+        """Apply ROS parameter overrides to YAML-loaded config dicts.
+
+        Only parameters with non-default values (non-empty string / non-zero int)
+        override the corresponding YAML keys.  This allows config/config.yaml to
+        selectively override deployment-tunable settings.
+        """
+
+        def _override(param_name: str, config_dict: Dict[str, Any], *keys: str) -> None:
+            val = self.get_parameter(param_name).value
+            if param_name == "serial_baudrate":
+                if val == 0:
+                    return
+            elif not val:
+                return
+            d = config_dict
+            for k in keys[:-1]:
+                d = d.setdefault(k, {})
+            d[keys[-1]] = val
+
+        _override("lidar_pose_topic", topics_config, "input_topics", "lidar_pose_topic")
+        _override("laser_pose_topic", topics_config, "output_topics", "refined_pose_topic")
+        _override("laser_status_topic", topics_config, "output_topics", "status_topic")
+        _override("tf_parent_frame", topics_config, "output_topics", "tf_parent_frame")
+        _override("tf_child_frame", topics_config, "output_topics", "tf_child_frame")
+        _override("serial_port", topics_config, "serial_input", "port")
+        _override("serial_baudrate", topics_config, "serial_input", "baudrate")
+        _override("world_frame_id", solver_config, "world", "frame_id")
+        _override("active_scene", solver_config, "scene_manager", "active_scene")
 
     def _load_message_class(self, type_path: str) -> type:
         module_name, _, class_name = type_path.rpartition(".")

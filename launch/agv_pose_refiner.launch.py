@@ -37,6 +37,11 @@ def generate_launch_description() -> LaunchDescription:
                 "publish_tf",
                 default_value="true",
             ),
+            DeclareLaunchArgument(
+                "params_file",
+                default_value="",
+                description="Path to shared ROS 2 parameter YAML (e.g. config.yaml)",
+            ),
             Node(
                 package="agv_pose_refiner",
                 executable="agv_pose_refiner_node",
@@ -51,7 +56,8 @@ def generate_launch_description() -> LaunchDescription:
                             LaunchConfiguration("publish_tf"),
                             value_type=bool,
                         ),
-                    }
+                    },
+                    LaunchConfiguration("params_file"),
                 ],
             ),
         ]

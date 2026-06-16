@@ -1,3 +1,6 @@
+# ⚠️ 注意：此文件中的部分参数可能被 /workspace/config/config.yaml 中的
+# agv_pose_refiner.ros__parameters 覆盖。运行时参数以 config.yaml 为准。
+
 ## 注：regions可以选择使用圆形区域或矩形区域
 ## 圆形区域：需要有x，y和max_lidar_distance_to_center_m参数（都是值）
 ## 矩形区域：需要有x_range，y_range（都是范围[]）
