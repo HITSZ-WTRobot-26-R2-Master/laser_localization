@@ -1,5 +1,6 @@
-# ⚠️ 注意：此文件中的部分参数可能被 /workspace/config/config.yaml 中的
-# agv_pose_refiner.ros__parameters 覆盖。运行时参数以 config.yaml 为准。
+# ⚠️ 警告：此文件在 Docker 运行时会被主仓库 config/laser/ 下的同名文件覆盖。
+# 请勿在此修改配置 —— 所有激光定位配置变更请到主仓库 config/laser/ 目录进行。
+# 此文件仅用于子模块独立开发/测试场景，不作为 RobotCon 实际运行配置。
 
 input_topics:
   lidar_pose_topic: /to_master_control
