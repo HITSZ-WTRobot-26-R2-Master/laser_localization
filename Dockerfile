@@ -61,7 +61,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         build-essential \
         procps \
         python3-colcon-common-extensions \
-        python3-pyserial \
+        python3-serial \
         python3-setuptools \
         python3-yaml \
         ros-${ROS_DISTRO}-ament-cmake \
