@@ -54,7 +54,9 @@ for ros_source in \
 done
 EOF
 
-RUN apt-get update \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         procps \
@@ -71,8 +73,7 @@ RUN apt-get update \
         ros-${ROS_DISTRO}-launch-ros \
         ros-${ROS_DISTRO}-rclpy \
         ros-${ROS_DISTRO}-std-msgs \
-        ros-${ROS_DISTRO}-tf2-ros \
-    && rm -rf /var/lib/apt/lists/*
+        ros-${ROS_DISTRO}-tf2-ros
 
 WORKDIR ${WORKSPACE_DIR}
 
