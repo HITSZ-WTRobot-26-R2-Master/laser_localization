@@ -11,7 +11,7 @@ serial_input:
   baudrate: 115200
   timeout_sec: 0.02
   min_publish_interval_ms: 5.0
-  poll_rate_hz: 100.0
+  poll_rate_hz: 10.0
   response_timeout_sec: 0.02
   decode_log_enabled: true
   decode_log_interval_ms: 0
