@@ -2,7 +2,7 @@
 # agv_pose_refiner.ros__parameters 覆盖。运行时参数以 config.yaml 为准。
 
 input_topics:
-  lidar_pose_topic: /to_master_control
+  lidar_pose_topic: /odin_base_pose
   lidar_input_format: custom_pose_fields
   lidar_message_type: interfaces.msg.R2Pose
 
