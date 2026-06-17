@@ -3,8 +3,10 @@ from __future__ import annotations
 import math
 import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.time import Time
@@ -22,7 +24,6 @@ from .common import (
     SensorMount,
     SerialSensorMapping,
     abs_time_diff_ms,
-    coerce_bool,
     crc16_modbus,
 )
 
@@ -39,34 +40,34 @@ class SerialReceiveLayer:
         self,
         node: Node,
         sensor_mounts: Dict[str, SensorMount],
-        serial_cfg: Dict[str, Any],
+        sensor_map: Dict[str, SerialSensorMapping],
+        query_device_ids: List[int],
+        serial_port: str,
+        serial_baudrate: int,
+        serial_timeout_sec: float,
+        serial_min_publish_interval_ms: float,
+        serial_poll_rate_hz: float,
+        serial_response_timeout_sec: float,
+        serial_decode_log_enabled: bool,
+        serial_decode_log_interval_ms: float,
+        serial_expect_matching_device_id: bool,
     ) -> None:
         self._node = node
         self._logger = node.get_logger()
         self._clock = node.get_clock()
         self._sensor_mounts = sensor_mounts
+        self._sensor_map = sensor_map
 
-        self.serial_port = str(serial_cfg.get("port", "COM3"))
-        self.serial_baudrate = int(serial_cfg.get("baudrate", 115200))
-        self.serial_timeout_sec = float(serial_cfg.get("timeout_sec", 0.02))
-        self.serial_min_publish_interval_ms = float(
-            serial_cfg.get("min_publish_interval_ms", 5.0)
-        )
-        self.serial_poll_rate_hz = float(serial_cfg.get("poll_rate_hz", 100.0))
-        self.serial_response_timeout_sec = float(
-            serial_cfg.get("response_timeout_sec", 0.008)
-        )
-        self.serial_decode_log_enabled = coerce_bool(
-            serial_cfg.get("decode_log_enabled", True)
-        )
-        self.serial_decode_log_interval_ms = max(
-            0.0, float(serial_cfg.get("decode_log_interval_ms", 500.0))
-        )
-        self.serial_expect_matching_device_id = coerce_bool(
-            serial_cfg.get("expect_matching_device_id", True)
-        )
-        self.serial_sensor_map = self._parse_serial_sensor_map(serial_cfg)
-        self.serial_query_device_ids = self._parse_serial_query_device_ids(serial_cfg)
+        self.serial_port = serial_port
+        self.serial_baudrate = serial_baudrate
+        self.serial_timeout_sec = serial_timeout_sec
+        self.serial_min_publish_interval_ms = serial_min_publish_interval_ms
+        self.serial_poll_rate_hz = serial_poll_rate_hz
+        self.serial_response_timeout_sec = serial_response_timeout_sec
+        self.serial_decode_log_enabled = serial_decode_log_enabled
+        self.serial_decode_log_interval_ms = max(0.0, float(serial_decode_log_interval_ms))
+        self.serial_expect_matching_device_id = serial_expect_matching_device_id
+        self.serial_query_device_ids = list(query_device_ids)
 
         self._latest_range_frame: Optional[RangeFrame] = None
         self._latest_range_frame_lock = threading.Lock()
@@ -78,16 +79,14 @@ class SerialReceiveLayer:
         }
         self._last_serial_frame_stamp: Optional[Time] = None
 
-        self._parser_condition = threading.Condition()
+        self._parser_lock = threading.Lock()
         self._pending_board_frames: Dict[int, BoardFrame] = {}
         self._latest_board_frames: Dict[int, BoardFrame] = {}
         self._last_decode_log_stamp_ns_by_device: Dict[int, int] = {}
         self._serial_byte_buffer = bytearray()
 
         self._serial_thread: Optional[threading.Thread] = None
-        self._serial_rx_thread: Optional[threading.Thread] = None
         self._serial_stop_event = threading.Event()
-        self._serial_connection_lost = threading.Event()
         self._serial_port_handle: Any = None
 
     def start(self) -> None:
@@ -98,27 +97,21 @@ class SerialReceiveLayer:
         if self._serial_thread is not None:
             return
         self._serial_thread = threading.Thread(
-            target=self._serial_supervisor_loop,
-            name="stp23l_serial_supervisor",
+            target=self._serial_loop,
+            name="stp23l_serial",
             daemon=True,
         )
         self._serial_thread.start()
 
     def stop(self) -> None:
         self._serial_stop_event.set()
-        self._serial_connection_lost.set()
-        with self._parser_condition:
-            self._parser_condition.notify_all()
         if self._serial_port_handle is not None:
             try:
                 self._serial_port_handle.close()
             except Exception:
                 pass
-        if self._serial_rx_thread is not None and self._serial_rx_thread.is_alive():
-            self._serial_rx_thread.join(timeout=1.0)
         if self._serial_thread is not None and self._serial_thread.is_alive():
-            self._serial_thread.join(timeout=1.0)
-        self._serial_rx_thread = None
+            self._serial_thread.join(timeout=2.0)
         self._serial_thread = None
 
     def snapshot_frame(self) -> Optional[RangeFrame]:
@@ -127,7 +120,7 @@ class SerialReceiveLayer:
 
     def snapshot_status(self, now: Optional[Time] = None) -> Dict[str, Any]:
         snapshot_now = now or self._clock.now()
-        with self._parser_condition:
+        with self._parser_lock:
             device_frames = {
                 str(device_id): self._build_device_status_snapshot(
                     board_frame=board_frame,
@@ -153,14 +146,27 @@ class SerialReceiveLayer:
             "logical_sensors": logical_sensors,
         }
 
-    def _serial_supervisor_loop(self) -> None:
+    # ---- Serial lifecycle ---------------------------------------------------
+
+    def _wait_for_serial_device(self) -> None:
+        device_path = Path(self.serial_port)
+        while rclpy.ok() and not device_path.is_char_device():
+            self._logger.warn(
+                f"Waiting for serial device: {self.serial_port}"
+            )
+            self._serial_stop_event.wait(1.0)
+
+    def _serial_loop(self) -> None:
         while not self._serial_stop_event.is_set():
-            self._serial_connection_lost.clear()
+            self._wait_for_serial_device()
+            if self._serial_stop_event.is_set():
+                return
+
             try:
                 handle = serial.Serial(
                     port=self.serial_port,
                     baudrate=self.serial_baudrate,
-                    timeout=self.serial_timeout_sec,
+                    timeout=self.serial_response_timeout_sec,
                 )
             except SerialException as exc:
                 self._logger.error(
@@ -179,82 +185,34 @@ class SerialReceiveLayer:
                 with handle:
                     self._serial_port_handle = handle
                     self._prepare_serial_handle(handle)
-                    self._start_serial_rx_thread(handle)
                     self._logger.info(
                         f"Opened STP23L serial port {self.serial_port} at "
                         f"{self.serial_baudrate} bps"
                     )
-                    while (
-                        not self._serial_stop_event.is_set()
-                        and not self._serial_connection_lost.is_set()
-                    ):
-                        self._poll_serial_devices_once(handle)
+                    while not self._serial_stop_event.is_set():
+                        self._drain_serial_input(handle)
+                        self._poll_cycle(handle)
             except SerialException as exc:
                 if not self._serial_stop_event.is_set():
                     self._logger.error(
-                        f"Serial port {self.serial_port} I/O failed during polling: {exc}"
+                        f"Serial port {self.serial_port} I/O failure: {exc}; "
+                        "requesting node shutdown for container restart"
                     )
             except Exception as exc:  # pragma: no cover - defensive runtime path
                 if not self._serial_stop_event.is_set():
-                    self._logger.error(f"Unexpected serial supervisor failure: {exc}")
+                    self._logger.error(f"Unexpected serial failure: {exc}")
             finally:
-                self._serial_connection_lost.set()
-                with self._parser_condition:
-                    self._parser_condition.notify_all()
                 self._serial_port_handle = None
-                if self._serial_rx_thread is not None and self._serial_rx_thread.is_alive():
-                    self._serial_rx_thread.join(timeout=1.0)
-                self._serial_rx_thread = None
 
-    def _start_serial_rx_thread(self, handle: Any) -> None:
-        self._serial_rx_thread = threading.Thread(
-            target=self._serial_rx_loop,
-            args=(handle,),
-            name="stp23l_serial_rx",
-            daemon=True,
-        )
-        self._serial_rx_thread.start()
-
-    def _serial_rx_loop(self, handle: Any) -> None:
-        try:
-            while (
-                not self._serial_stop_event.is_set()
-                and not self._serial_connection_lost.is_set()
-            ):
-                chunk = self._read_serial_chunk(handle)
-                if not chunk:
-                    continue
-                with self._parser_condition:
-                    self._serial_byte_buffer.extend(chunk)
-                    produced_frame = self._drain_serial_buffer_locked()
-                    if produced_frame:
-                        self._parser_condition.notify_all()
-        except SerialException as exc:
-            if not self._serial_stop_event.is_set():
-                self._logger.error(
-                    f"Serial port {self.serial_port} read failed: {exc}"
-                )
-            self._serial_connection_lost.set()
-        except Exception as exc:  # pragma: no cover - defensive runtime path
-            if not self._serial_stop_event.is_set():
-                self._logger.error(f"Unexpected serial RX failure: {exc}")
-            self._serial_connection_lost.set()
-        finally:
-            with self._parser_condition:
-                self._parser_condition.notify_all()
-
-    def _read_serial_chunk(self, handle: Any) -> bytes:
-        read_size = 1
-        try:
-            available = int(getattr(handle, "in_waiting", 0) or 0)
-            if available > 0:
-                read_size = min(available, 256)
-        except Exception:
-            pass
-        return handle.read(read_size)
+        if not self._serial_stop_event.is_set():
+            self._logger.error(
+                "Serial loop exited due to unrecoverable error; "
+                "calling rclpy.shutdown() for container restart"
+            )
+            rclpy.shutdown()
 
     def _prepare_serial_handle(self, handle: Any) -> None:
-        with self._parser_condition:
+        with self._parser_lock:
             self._serial_byte_buffer.clear()
             self._pending_board_frames.clear()
             self._latest_board_frames.clear()
@@ -270,7 +228,28 @@ class SerialReceiveLayer:
                     f"Serial {reset_name} failed on {self.serial_port}: {exc}"
                 )
 
-    def _poll_serial_devices_once(self, handle: Any) -> None:
+    # ---- Non-blocking read + parse ------------------------------------------
+
+    def _drain_serial_input(self, handle: Any) -> None:
+        try:
+            available = int(getattr(handle, "in_waiting", 0) or 0)
+            if available <= 0:
+                return
+            chunk = handle.read(min(available, 256))
+            if not chunk:
+                return
+        except SerialException:
+            raise
+        except Exception:
+            return
+
+        with self._parser_lock:
+            self._serial_byte_buffer.extend(chunk)
+            self._drain_serial_buffer_locked()
+
+    # ---- Polling cycle ------------------------------------------------------
+
+    def _poll_cycle(self, handle: Any) -> None:
         if not self.serial_query_device_ids:
             self._serial_stop_event.wait(0.1)
             return
@@ -278,12 +257,13 @@ class SerialReceiveLayer:
         cycle_start = time.monotonic()
         self._clear_pending_query_responses()
         cycle_board_frames: Dict[int, BoardFrame] = {}
+
         for device_id in self.serial_query_device_ids:
-            if self._serial_stop_event.is_set() or self._serial_connection_lost.is_set():
+            if self._serial_stop_event.is_set():
                 return
             handle.write(self._build_query_frame(device_id))
             handle.flush()
-            board_frame = self._wait_for_query_response(device_id)
+            board_frame = self._wait_for_response_active(handle, device_id)
             if board_frame is None:
                 buffered_len, pending_ids = self._snapshot_rx_debug_state()
                 self._logger.warn(
@@ -317,33 +297,41 @@ class SerialReceiveLayer:
         crc = crc16_modbus(payload)
         return payload + crc.to_bytes(2, byteorder="little")
 
-    def _wait_for_query_response(self, expected_device_id: int) -> Optional[BoardFrame]:
+    def _wait_for_response_active(
+        self, handle: Any, expected_device_id: int
+    ) -> Optional[BoardFrame]:
         deadline = time.monotonic() + self.serial_response_timeout_sec
-        with self._parser_condition:
-            while (
-                not self._serial_stop_event.is_set()
-                and not self._serial_connection_lost.is_set()
-            ):
-                board_frame = self._take_pending_board_frame_locked(expected_device_id)
+        while not self._serial_stop_event.is_set():
+            with self._parser_lock:
+                board_frame = self._pending_board_frames.pop(expected_device_id, None)
                 if board_frame is not None:
                     return board_frame
-                remaining = deadline - time.monotonic()
-                if remaining <= 0.0:
+                if time.monotonic() >= deadline:
                     return None
-                self._parser_condition.wait(timeout=remaining)
+
+            self._drain_serial_input(handle)
+
+            with self._parser_lock:
+                board_frame = self._pending_board_frames.pop(expected_device_id, None)
+                if board_frame is not None:
+                    return board_frame
+                if time.monotonic() >= deadline:
+                    return None
+
+            time.sleep(0.0005)
+
         return None
 
     def _snapshot_rx_debug_state(self) -> Tuple[int, List[int]]:
-        with self._parser_condition:
+        with self._parser_lock:
             return len(self._serial_byte_buffer), sorted(self._pending_board_frames.keys())
 
     def _clear_pending_query_responses(self) -> None:
-        with self._parser_condition:
+        with self._parser_lock:
             for device_id in self.serial_query_device_ids:
                 self._pending_board_frames.pop(device_id, None)
 
-    def _take_pending_board_frame_locked(self, device_id: int) -> Optional[BoardFrame]:
-        return self._pending_board_frames.pop(device_id, None)
+    # ---- Buffer parser ------------------------------------------------------
 
     def _drain_serial_buffer_locked(self) -> bool:
         produced_frame = False
@@ -423,7 +411,7 @@ class SerialReceiveLayer:
     def _log_decoded_board_frame_locked(self, board_frame: BoardFrame) -> None:
         mappings = [
             mapping
-            for mapping in self.serial_sensor_map.values()
+            for mapping in self._sensor_map.values()
             if mapping.device_id == board_frame.device_id
         ]
         if not mappings:
@@ -578,7 +566,7 @@ class SerialReceiveLayer:
         self,
         sensor_name: str,
     ) -> Dict[str, Any]:
-        mapping = self.serial_sensor_map[sensor_name]
+        mapping = self._sensor_map[sensor_name]
         board_frame = self._latest_board_frames.get(mapping.device_id)
         raw_mm: Optional[int] = None
         online: Optional[bool] = None
@@ -602,7 +590,7 @@ class SerialReceiveLayer:
         }
 
     def _ingest_board_frame(self, board_frame: BoardFrame) -> None:
-        for mapping in self.serial_sensor_map.values():
+        for mapping in self._sensor_map.values():
             if mapping.device_id != board_frame.device_id:
                 continue
             slot_index = mapping.slot_index
@@ -642,7 +630,7 @@ class SerialReceiveLayer:
         ranges: Dict[str, float] = {}
         valid: Dict[str, bool] = {}
         for name in SENSOR_ORDER:
-            mapping = self.serial_sensor_map[name]
+            mapping = self._sensor_map[name]
             mount = self._sensor_mounts[name]
             board_frame = cycle_board_frames.get(mapping.device_id)
             if board_frame is None:
@@ -660,46 +648,3 @@ class SerialReceiveLayer:
             )
             valid[name] = serial_valid and range_valid
         return RangeFrame(stamp=stamp, ranges=ranges, valid=valid)
-
-    def _parse_serial_sensor_map(
-        self, serial_cfg: Dict[str, Any]
-    ) -> Dict[str, SerialSensorMapping]:
-        sensor_map_cfg = serial_cfg.get("sensor_map", {})
-        missing = [name for name in SENSOR_ORDER if name not in sensor_map_cfg]
-        if missing:
-            raise RuntimeError(f"serial_input.sensor_map missing keys: {missing}")
-
-        parsed: Dict[str, SerialSensorMapping] = {}
-        used_pairs = set()
-        for logical_sensor in SENSOR_ORDER:
-            item = sensor_map_cfg[logical_sensor]
-            device_id = int(item["device_id"])
-            slot_index = int(item["slot_index"])
-            if slot_index < 0 or slot_index > 3:
-                raise RuntimeError(
-                    f"{logical_sensor} slot_index must be in [0, 3], got {slot_index}"
-                )
-            pair = (device_id, slot_index)
-            if pair in used_pairs:
-                raise RuntimeError(f"Duplicate serial sensor mapping for {pair}")
-            used_pairs.add(pair)
-            parsed[logical_sensor] = SerialSensorMapping(
-                logical_sensor=logical_sensor,
-                device_id=device_id,
-                slot_index=slot_index,
-            )
-        return parsed
-
-    def _parse_serial_query_device_ids(self, serial_cfg: Dict[str, Any]) -> List[int]:
-        configured = serial_cfg.get("query_device_ids")
-        if configured is None:
-            return sorted({mapping.device_id for mapping in self.serial_sensor_map.values()})
-        if not isinstance(configured, list) or not configured:
-            raise RuntimeError("serial_input.query_device_ids must be a non-empty list")
-        parsed = [int(item) for item in configured]
-        for device_id in parsed:
-            if device_id < 0 or device_id > 255:
-                raise RuntimeError(
-                    f"serial_input.query_device_ids contains invalid device id {device_id}"
-                )
-        return parsed

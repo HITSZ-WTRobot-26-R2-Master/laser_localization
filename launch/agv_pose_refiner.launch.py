@@ -9,9 +9,6 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description() -> LaunchDescription:
     package_share = FindPackageShare("agv_pose_refiner")
 
-    topics_config_default = PathJoinSubstitution(
-        [package_share, "config", "topics.yaml"]
-    )
     sensors_config_default = PathJoinSubstitution(
         [package_share, "config", "sensors.yaml"]
     )
@@ -21,10 +18,6 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument(
-                "topics_config_path",
-                default_value=topics_config_default,
-            ),
             DeclareLaunchArgument(
                 "sensors_config_path",
                 default_value=sensors_config_default,
@@ -49,7 +42,6 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
                 parameters=[
                     {
-                        "topics_config_path": LaunchConfiguration("topics_config_path"),
                         "sensors_config_path": LaunchConfiguration("sensors_config_path"),
                         "solver_config_path": LaunchConfiguration("solver_config_path"),
                         "publish_tf": ParameterValue(

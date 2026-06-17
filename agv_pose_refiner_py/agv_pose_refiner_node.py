@@ -18,6 +18,8 @@ from .common import (
     coerce_bool,
     default_config_path,
     euler_from_quaternion_components,
+    parse_serial_sensor_map,
+    resolve_query_device_ids,
     wrap_deg,
 )
 from .pose_solver import PoseSolveLayer
@@ -29,54 +31,69 @@ class AgvPoseRefinerNode(Node):
     def __init__(self) -> None:
         super().__init__("agv_pose_refiner")
 
-        self.declare_parameter("topics_config_path", default_config_path("topics.yaml"))
-        self.declare_parameter("sensors_config_path", default_config_path("sensors.yaml"))
+        # ---- Config file paths ----------------------------------------------
+        self.declare_parameter(
+            "sensors_config_path", default_config_path("sensors.yaml")
+        )
         self.declare_parameter(
             "solver_config_path", default_config_path("map_and_solver.yaml")
         )
+
+        # ---- Input topic ----------------------------------------------------
+        self.declare_parameter("lidar_pose_topic", "/odin_base_pose")
+        self.declare_parameter("lidar_input_format", "custom_pose_fields")
+        self.declare_parameter("lidar_message_type", "interfaces.msg.R2Pose")
+
+        # ---- Output topics --------------------------------------------------
+        self.declare_parameter("laser_pose_topic", "/laser_pose")
+        self.declare_parameter("laser_status_topic", "/laser_status")
+        self.declare_parameter("tf_parent_frame", "map")
+        self.declare_parameter("tf_child_frame", "base_link")
         self.declare_parameter("publish_tf", True)
 
-        # Deployment-tunable overrides (empty defaults defer to YAML values).
-        self.declare_parameter("lidar_pose_topic", "")
-        self.declare_parameter("laser_pose_topic", "")
-        self.declare_parameter("laser_status_topic", "")
-        self.declare_parameter("tf_parent_frame", "")
-        self.declare_parameter("tf_child_frame", "")
-        self.declare_parameter("serial_port", "")
-        self.declare_parameter("serial_baudrate", 0)
-        self.declare_parameter("world_frame_id", "")
-        self.declare_parameter("active_scene", "")
+        # ---- Serial ---------------------------------------------------------
+        self.declare_parameter("serial_port", "/dev/laser_serial")
+        self.declare_parameter("serial_baudrate", 115200)
+        self.declare_parameter("serial_timeout_sec", 0.02)
+        self.declare_parameter("serial_min_publish_interval_ms", 5.0)
+        self.declare_parameter("serial_poll_rate_hz", 10.0)
+        self.declare_parameter("serial_response_timeout_sec", 0.02)
+        self.declare_parameter("serial_decode_log_enabled", True)
+        self.declare_parameter("serial_decode_log_interval_ms", 0)
+        self.declare_parameter("serial_expect_matching_device_id", True)
+        self.declare_parameter("serial_query_device_ids", [1, 2])
 
-        topics_config = self._load_yaml(self.get_parameter("topics_config_path").value)
-        sensors_config = self._load_yaml(self.get_parameter("sensors_config_path").value)
-        solver_config = self._load_yaml(self.get_parameter("solver_config_path").value)
-        publish_tf = coerce_bool(self.get_parameter("publish_tf").value)
+        # ---- Solver ---------------------------------------------------------
+        self.declare_parameter("world_frame_id", "map")
+        self.declare_parameter("active_scene", "mode_a")
 
-        self._apply_param_overrides(topics_config, solver_config)
-
-        topics_in = topics_config.get("input_topics", {})
-        topics_out = topics_config.get("output_topics", {})
-        serial_cfg = topics_config.get("serial_input", {})
-
-        self.lidar_pose_topic = str(
-            topics_in.get("lidar_pose_topic", "/localization/lidar_coarse_pose")
+        # ---- Load YAML configs (sensors + solver only) ----------------------
+        sensors_config = self._load_yaml(
+            self.get_parameter("sensors_config_path").value
         )
-        lidar_input_format = str(
-            topics_in.get("lidar_input_format", "custom_pose_fields")
+        solver_config = self._load_yaml(
+            self.get_parameter("solver_config_path").value
         )
+
+        # ---- Parse sensor_map from sensors.yaml -----------------------------
+        sensor_map = parse_serial_sensor_map(sensors_config.get("sensor_map", {}))
+        query_device_ids = resolve_query_device_ids(
+            self.get_parameter("serial_query_device_ids").value, sensor_map
+        )
+
+        # ---- Validate input format ------------------------------------------
+        lidar_input_format = self.get_parameter("lidar_input_format").value
         if lidar_input_format != "custom_pose_fields":
             raise RuntimeError(
-                "Only input_topics.lidar_input_format=custom_pose_fields is supported, "
+                "Only lidar_input_format=custom_pose_fields is supported, "
                 f"got '{lidar_input_format}'."
             )
 
-        self._pose_msg_type = self._load_message_class(
-            str(
-                topics_in.get(
-                    "lidar_message_type", "your_interfaces.msg.LidarPoseStamped"
-                )
-            )
-        )
+        lidar_message_type = self.get_parameter("lidar_message_type").value
+        self._pose_msg_type = self._load_message_class(lidar_message_type)
+
+        # ---- Build layers ---------------------------------------------------
+        publish_tf = coerce_bool(self.get_parameter("publish_tf").value)
 
         self.solve_layer = PoseSolveLayer(
             logger=self.get_logger(),
@@ -86,26 +103,44 @@ class AgvPoseRefinerNode(Node):
         self.receive_layer = SerialReceiveLayer(
             node=self,
             sensor_mounts=self.solve_layer.sensor_mounts,
-            serial_cfg=serial_cfg,
+            sensor_map=sensor_map,
+            query_device_ids=query_device_ids,
+            serial_port=self.get_parameter("serial_port").value,
+            serial_baudrate=self.get_parameter("serial_baudrate").value,
+            serial_timeout_sec=self.get_parameter("serial_timeout_sec").value,
+            serial_min_publish_interval_ms=self.get_parameter(
+                "serial_min_publish_interval_ms"
+            ).value,
+            serial_poll_rate_hz=self.get_parameter("serial_poll_rate_hz").value,
+            serial_response_timeout_sec=self.get_parameter(
+                "serial_response_timeout_sec"
+            ).value,
+            serial_decode_log_enabled=self.get_parameter(
+                "serial_decode_log_enabled"
+            ).value,
+            serial_decode_log_interval_ms=self.get_parameter(
+                "serial_decode_log_interval_ms"
+            ).value,
+            serial_expect_matching_device_id=self.get_parameter(
+                "serial_expect_matching_device_id"
+            ).value,
         )
         self.publish_layer = ResultPublishLayer(
             node=self,
             pose_msg_type=self._pose_msg_type,
-            refined_pose_topic=str(
-                topics_out.get("refined_pose_topic", "/localization/pose")
-            ),
-            status_topic=str(topics_out.get("status_topic", "/localization/status")),
+            refined_pose_topic=self.get_parameter("laser_pose_topic").value,
+            status_topic=self.get_parameter("laser_status_topic").value,
             world_frame_id=self.solve_layer.world_frame_id,
-            tf_parent_frame=str(
-                topics_out.get("tf_parent_frame", self.solve_layer.world_frame_id)
-            ),
-            tf_child_frame=str(topics_out.get("tf_child_frame", "base_link")),
+            tf_parent_frame=self.get_parameter("tf_parent_frame").value,
+            tf_child_frame=self.get_parameter("tf_child_frame").value,
             publish_tf=publish_tf,
         )
 
+        # ---- Subscription ---------------------------------------------------
+        lidar_pose_topic = self.get_parameter("lidar_pose_topic").value
         self.create_subscription(
             self._pose_msg_type,
-            self.lidar_pose_topic,
+            lidar_pose_topic,
             self._on_lidar_custom_pose,
             30,
         )
@@ -113,7 +148,7 @@ class AgvPoseRefinerNode(Node):
         self.get_logger().info(
             "agv_pose_refiner started "
             f"(serial={self.receive_layer.serial_port}@{self.receive_layer.serial_baudrate}, "
-            f"lidar={self.lidar_pose_topic}, scene={self.solve_layer.active_scene})"
+            f"lidar={lidar_pose_topic}, scene={self.solve_layer.active_scene})"
         )
 
     def _load_yaml(self, path_value: str) -> Dict[str, Any]:
@@ -125,38 +160,6 @@ class AgvPoseRefinerNode(Node):
         if not isinstance(data, dict):
             raise RuntimeError(f"YAML root must be a mapping: {path}")
         return data
-
-    def _apply_param_overrides(
-        self, topics_config: Dict[str, Any], solver_config: Dict[str, Any]
-    ) -> None:
-        """Apply ROS parameter overrides to YAML-loaded config dicts.
-
-        Only parameters with non-default values (non-empty string / non-zero int)
-        override the corresponding YAML keys.  This allows config/config.yaml to
-        selectively override deployment-tunable settings.
-        """
-
-        def _override(param_name: str, config_dict: Dict[str, Any], *keys: str) -> None:
-            val = self.get_parameter(param_name).value
-            if param_name == "serial_baudrate":
-                if val == 0:
-                    return
-            elif not val:
-                return
-            d = config_dict
-            for k in keys[:-1]:
-                d = d.setdefault(k, {})
-            d[keys[-1]] = val
-
-        _override("lidar_pose_topic", topics_config, "input_topics", "lidar_pose_topic")
-        _override("laser_pose_topic", topics_config, "output_topics", "refined_pose_topic")
-        _override("laser_status_topic", topics_config, "output_topics", "status_topic")
-        _override("tf_parent_frame", topics_config, "output_topics", "tf_parent_frame")
-        _override("tf_child_frame", topics_config, "output_topics", "tf_child_frame")
-        _override("serial_port", topics_config, "serial_input", "port")
-        _override("serial_baudrate", topics_config, "serial_input", "baudrate")
-        _override("world_frame_id", solver_config, "world", "frame_id")
-        _override("active_scene", solver_config, "scene_manager", "active_scene")
 
     def _load_message_class(self, type_path: str) -> type:
         module_name, _, class_name = type_path.rpartition(".")

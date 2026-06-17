@@ -154,6 +154,51 @@ class SerialSensorMapping:
     slot_index: int
 
 
+def parse_serial_sensor_map(
+    raw_config: Dict[str, Any],
+) -> Dict[str, SerialSensorMapping]:
+    missing = [name for name in SENSOR_ORDER if name not in raw_config]
+    if missing:
+        raise RuntimeError(f"sensor_map missing keys: {missing}")
+
+    parsed: Dict[str, SerialSensorMapping] = {}
+    used_pairs = set()
+    for logical_sensor in SENSOR_ORDER:
+        item = raw_config[logical_sensor]
+        device_id = int(item["device_id"])
+        slot_index = int(item["slot_index"])
+        if slot_index < 0 or slot_index > 3:
+            raise RuntimeError(
+                f"{logical_sensor} slot_index must be in [0, 3], got {slot_index}"
+            )
+        pair = (device_id, slot_index)
+        if pair in used_pairs:
+            raise RuntimeError(f"Duplicate serial sensor mapping for {pair}")
+        used_pairs.add(pair)
+        parsed[logical_sensor] = SerialSensorMapping(
+            logical_sensor=logical_sensor,
+            device_id=device_id,
+            slot_index=slot_index,
+        )
+    return parsed
+
+
+def resolve_query_device_ids(
+    configured: Optional[List[int]],
+    sensor_map: Dict[str, SerialSensorMapping],
+) -> List[int]:
+    if configured is not None:
+        if not configured:
+            raise RuntimeError("serial_query_device_ids must be a non-empty list")
+        for device_id in configured:
+            if device_id < 0 or device_id > 255:
+                raise RuntimeError(
+                    f"serial_query_device_ids contains invalid device id {device_id}"
+                )
+        return [int(d) for d in configured]
+    return sorted({mapping.device_id for mapping in sensor_map.values()})
+
+
 def coerce_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value

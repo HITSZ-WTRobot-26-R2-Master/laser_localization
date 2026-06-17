@@ -1,6 +1,9 @@
-# ⚠️ 警告：此文件在 Docker 运行时会被主仓库 config/laser/ 下的同名文件覆盖。
-# 请勿在此修改配置 —— 所有激光定位配置变更请到主仓库 config/laser/ 目录进行。
-# 此文件仅用于子模块独立开发/测试场景，不作为 RobotCon 实际运行配置。
+# ⚠️ 此文件仅作为子模块配置模板，Docker 运行时会被主仓库 config/laser/sensors.yaml 覆盖。
+# 所有正式配置变更请到主仓库 config/laser/ 目录进行。
+#
+# 配置来源说明：
+#   - sensor_mounts: 传感器物理安装参数（主仓库覆盖）
+#   - sensor_map:    逻辑传感器到物理设备的映射（主仓库覆盖）
 
 sensor_mounts:
   front_center:
@@ -33,3 +36,23 @@ sensor_mounts:
     dir: [0.0, -1.0]
     min_range_m: 0.03
     max_range_m: 2.00
+
+sensor_map:
+  front_center:
+    device_id: 2
+    slot_index: 1
+  rear_center:
+    device_id: 1
+    slot_index: 3
+  left_front:
+    device_id: 2
+    slot_index: 0
+  left_rear:
+    device_id: 1
+    slot_index: 2
+  right_front:
+    device_id: 2
+    slot_index: 2
+  right_rear:
+    device_id: 1
+    slot_index: 0

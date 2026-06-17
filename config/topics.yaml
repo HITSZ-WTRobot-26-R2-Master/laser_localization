@@ -1,44 +1,11 @@
-# ⚠️ 注意：此文件中的部分参数可能被 /workspace/config/config.yaml 中的
-# agv_pose_refiner.ros__parameters 覆盖。运行时参数以 config.yaml 为准。
-
-input_topics:
-  lidar_pose_topic: /odin_base_pose
-  lidar_input_format: custom_pose_fields
-  lidar_message_type: interfaces.msg.R2Pose
-
-serial_input:
-  port: /dev/ttyUSB0
-  baudrate: 115200
-  timeout_sec: 0.02
-  min_publish_interval_ms: 5.0
-  poll_rate_hz: 10.0
-  response_timeout_sec: 0.02
-  decode_log_enabled: true
-  decode_log_interval_ms: 0
-  expect_matching_device_id: true
-  query_device_ids: [1, 2]
-  sensor_map:
-    front_center:
-      device_id: 2
-      slot_index: 1
-    rear_center:
-      device_id: 1
-      slot_index: 3
-    left_front:
-      device_id: 2
-      slot_index: 0
-    left_rear:
-      device_id: 1
-      slot_index: 2
-    right_front:
-      device_id: 2
-      slot_index: 2
-    right_rear:
-      device_id: 1
-      slot_index: 0
-
-output_topics:
-  refined_pose_topic: /laser_pose
-  status_topic: /laser_status
-  tf_parent_frame: map
-  tf_child_frame: base_link
+# ⚠️ 此文件已失效 —— 保留仅作为配置模板参考。
+#
+# 串口和话题配置已迁移至主仓库 config/config.yaml 的 agv_pose_refiner.ros__parameters 段落，
+# 通过 ROS2 参数系统加载。传感器映射 (sensor_map) 已迁移至 config/laser/sensors.yaml。
+#
+# 运行时实际生效的配置来源：
+#   - 串口 / 话题 / 轮询参数：config/config.yaml (ROS2 params_file)
+#   - 传感器映射 + 安装参数：config/laser/sensors.yaml (Docker 挂载覆盖)
+#   - 地图 + 解算器参数：config/laser/map_and_solver.yaml (Docker 挂载覆盖)
+#
+# 此文件不再被 agv_pose_refiner 节点加载，请勿修改或依赖此文件中的值。
