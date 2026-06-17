@@ -56,7 +56,6 @@ class AgvPoseRefinerNode(Node):
 
         topics_in = topics_config.get("input_topics", {})
         topics_out = topics_config.get("output_topics", {})
-        timing_cfg = topics_config.get("timing", {})
         serial_cfg = topics_config.get("serial_input", {})
 
         self.lidar_pose_topic = str(
@@ -83,13 +82,11 @@ class AgvPoseRefinerNode(Node):
             logger=self.get_logger(),
             sensors_config=sensors_config,
             solver_config=solver_config,
-            timing_cfg=timing_cfg,
         )
         self.receive_layer = SerialReceiveLayer(
             node=self,
             sensor_mounts=self.solve_layer.sensor_mounts,
             serial_cfg=serial_cfg,
-            range_buffer_ms=float(timing_cfg.get("range_buffer_ms", 300.0)),
         )
         self.publish_layer = ResultPublishLayer(
             node=self,
@@ -187,10 +184,10 @@ class AgvPoseRefinerNode(Node):
     def _on_lidar_custom_pose(self, msg: Any) -> None:
         coarse = self._coarse_pose_from_custom_pose(msg)
         now = self.get_clock().now()
-        range_frames = self.receive_layer.snapshot_frames()
+        range_frame = self.receive_layer.snapshot_frame()
         result = self.solve_layer.refine(
             coarse=coarse,
-            range_frames=range_frames,
+            range_frame=range_frame,
             now=now,
         )
         self.publish_layer.publish(

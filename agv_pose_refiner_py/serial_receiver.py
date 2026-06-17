@@ -3,8 +3,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from collections import deque
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -41,13 +40,11 @@ class SerialReceiveLayer:
         node: Node,
         sensor_mounts: Dict[str, SensorMount],
         serial_cfg: Dict[str, Any],
-        range_buffer_ms: float,
     ) -> None:
         self._node = node
         self._logger = node.get_logger()
         self._clock = node.get_clock()
         self._sensor_mounts = sensor_mounts
-        self._range_buffer_ms = float(range_buffer_ms)
 
         self.serial_port = str(serial_cfg.get("port", "COM3"))
         self.serial_baudrate = int(serial_cfg.get("baudrate", 115200))
@@ -71,8 +68,8 @@ class SerialReceiveLayer:
         self.serial_sensor_map = self._parse_serial_sensor_map(serial_cfg)
         self.serial_query_device_ids = self._parse_serial_query_device_ids(serial_cfg)
 
-        self._range_buffer: Deque[RangeFrame] = deque()
-        self._range_buffer_lock = threading.Lock()
+        self._latest_range_frame: Optional[RangeFrame] = None
+        self._latest_range_frame_lock = threading.Lock()
         self._latest_serial_ranges_m: Dict[str, float] = {
             name: float("nan") for name in SENSOR_ORDER
         }
@@ -124,9 +121,9 @@ class SerialReceiveLayer:
         self._serial_rx_thread = None
         self._serial_thread = None
 
-    def snapshot_frames(self) -> List[RangeFrame]:
-        with self._range_buffer_lock:
-            return list(self._range_buffer)
+    def snapshot_frame(self) -> Optional[RangeFrame]:
+        with self._latest_range_frame_lock:
+            return self._latest_range_frame
 
     def snapshot_status(self, now: Optional[Time] = None) -> Dict[str, Any]:
         snapshot_now = now or self._clock.now()
@@ -160,11 +157,26 @@ class SerialReceiveLayer:
         while not self._serial_stop_event.is_set():
             self._serial_connection_lost.clear()
             try:
-                with serial.Serial(
+                handle = serial.Serial(
                     port=self.serial_port,
                     baudrate=self.serial_baudrate,
                     timeout=self.serial_timeout_sec,
-                ) as handle:
+                )
+            except SerialException as exc:
+                self._logger.error(
+                    f"Failed to open serial port {self.serial_port}: {exc}"
+                )
+                self._serial_stop_event.wait(1.0)
+                continue
+            except Exception as exc:  # pragma: no cover - defensive runtime path
+                self._logger.error(
+                    f"Unexpected serial open failure on {self.serial_port}: {exc}"
+                )
+                self._serial_stop_event.wait(1.0)
+                continue
+
+            try:
+                with handle:
                     self._serial_port_handle = handle
                     self._prepare_serial_handle(handle)
                     self._start_serial_rx_thread(handle)
@@ -178,13 +190,13 @@ class SerialReceiveLayer:
                     ):
                         self._poll_serial_devices_once(handle)
             except SerialException as exc:
-                self._logger.error(
-                    f"Serial port {self.serial_port} open/write failed: {exc}"
-                )
-                self._serial_stop_event.wait(1.0)
+                if not self._serial_stop_event.is_set():
+                    self._logger.error(
+                        f"Serial port {self.serial_port} I/O failed during polling: {exc}"
+                    )
             except Exception as exc:  # pragma: no cover - defensive runtime path
-                self._logger.error(f"Unexpected serial supervisor failure: {exc}")
-                self._serial_stop_event.wait(1.0)
+                if not self._serial_stop_event.is_set():
+                    self._logger.error(f"Unexpected serial supervisor failure: {exc}")
             finally:
                 self._serial_connection_lost.set()
                 with self._parser_condition:
@@ -610,7 +622,8 @@ class SerialReceiveLayer:
         if not self._should_publish_serial_frame(stamp):
             return
         frame = self._build_range_frame_from_cycle(stamp, cycle_board_frames)
-        self._append_range_frame(frame)
+        with self._latest_range_frame_lock:
+            self._latest_range_frame = frame
         self._last_serial_frame_stamp = stamp
 
     def _should_publish_serial_frame(self, stamp: Time) -> bool:
@@ -647,16 +660,6 @@ class SerialReceiveLayer:
             )
             valid[name] = serial_valid and range_valid
         return RangeFrame(stamp=stamp, ranges=ranges, valid=valid)
-
-    def _append_range_frame(self, frame: RangeFrame) -> None:
-        with self._range_buffer_lock:
-            self._range_buffer.append(frame)
-            newest_stamp = frame.stamp
-            while self._range_buffer:
-                oldest = self._range_buffer[0]
-                if abs_time_diff_ms(newest_stamp, oldest.stamp) <= self._range_buffer_ms:
-                    break
-                self._range_buffer.popleft()
 
     def _parse_serial_sensor_map(
         self, serial_cfg: Dict[str, Any]

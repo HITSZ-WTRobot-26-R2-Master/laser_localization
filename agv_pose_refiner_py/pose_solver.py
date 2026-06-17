@@ -32,7 +32,6 @@ class PoseSolveLayer:
         logger: Any,
         sensors_config: Dict[str, Any],
         solver_config: Dict[str, Any],
-        timing_cfg: Dict[str, Any],
     ) -> None:
         self._logger = logger
         self.sensor_mounts = self._parse_sensor_mounts(sensors_config)
@@ -53,7 +52,7 @@ class PoseSolveLayer:
     def refine(
         self,
         coarse: CoarsePose,
-        range_frames: List[RangeFrame],
+        range_frame: Optional[RangeFrame],
         now: Time,
     ) -> SolveResult:
         if not self._is_finite_pose(coarse):
@@ -64,9 +63,9 @@ class PoseSolveLayer:
                 debug=self._build_debug_payload(
                     coarse=coarse,
                     transport_delay_ms=None,
-                    range_frame_found=None,
+                    range_frame_found=range_frame is not None,
                     prior_age_ms=None,
-                    range_frame_count=len(range_frames),
+                    range_frame_count=1 if range_frame is not None else 0,
                     region_debug=None,
                 ),
             )
@@ -76,7 +75,6 @@ class PoseSolveLayer:
             scene_cfg, coarse
         )
         transport_delay_ms = time_diff_ms(now, coarse.stamp)
-        range_frame = self._latest_range_frame(range_frames)
         if range_frame is None:
             return self._make_coarse_result(
                 coarse,
@@ -86,7 +84,7 @@ class PoseSolveLayer:
                     transport_delay_ms=transport_delay_ms,
                     range_frame_found=False,
                     prior_age_ms=None,
-                    range_frame_count=len(range_frames),
+                    range_frame_count=0,
                     region_debug=region_debug,
                 ),
             )
@@ -104,7 +102,7 @@ class PoseSolveLayer:
                     transport_delay_ms=transport_delay_ms,
                     range_frame_found=True,
                     prior_age_ms=prior_age_ms,
-                    range_frame_count=len(range_frames),
+                    range_frame_count=1,
                     region_debug=region_debug,
                 ),
             )
@@ -123,7 +121,7 @@ class PoseSolveLayer:
                 transport_delay_ms=transport_delay_ms,
                 range_frame_found=True,
                 prior_age_ms=prior_age_ms,
-                range_frame_count=len(range_frames),
+                range_frame_count=1,
                 region_debug=region_debug,
             ),
         )
@@ -321,11 +319,6 @@ class PoseSolveLayer:
             and math.isfinite(coarse.pitch_rad)
             and math.isfinite(coarse.yaw_deg)
         )
-
-    def _latest_range_frame(self, frames: List[RangeFrame]) -> Optional[RangeFrame]:
-        if not frames:
-            return None
-        return frames[-1]
 
     def _select_region_match_with_debug(
         self, scene_cfg: Dict[str, Any], coarse: CoarsePose
