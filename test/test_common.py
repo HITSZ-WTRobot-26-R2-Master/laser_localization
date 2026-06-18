@@ -3,6 +3,10 @@
 import math
 import unittest
 
+from _module_stubs import install_test_stubs
+
+install_test_stubs()
+
 from agv_pose_refiner_py.common import (
     coerce_bool,
     crc16_modbus,
