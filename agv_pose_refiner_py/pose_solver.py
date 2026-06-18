@@ -752,8 +752,34 @@ class PoseSolveLayer:
             )
             for wall_pair in wall_pairs
         ]
-        selected_index = self._select_best_solver_candidate_index(candidate_results)
-        selected_result = candidate_results[selected_index]
+        credible_indices = [
+            index
+            for index, candidate_result in enumerate(candidate_results)
+            if self._is_dual_wall_pair_candidate_credible(candidate_result, solver_cfg)
+        ]
+        selection_indices = (
+            credible_indices if credible_indices else list(range(len(candidate_results)))
+        )
+        selected_index = self._select_best_solver_candidate_index(
+            candidate_results,
+            candidate_indices=selection_indices,
+        )
+        preferred_result = candidate_results[selected_index]
+        fallback_used = not credible_indices
+        selected_result = (
+            self._build_dual_wall_pair_front_x_fallback_result(
+                coarse=coarse,
+                range_frame=range_frame,
+                wall_pairs=wall_pairs,
+                solver_cfg=solver_cfg,
+                prior_age_ms=prior_age_ms,
+                region_name=region_name,
+                usable_sensor_count=usable_sensor_count,
+                debug=debug,
+            )
+            if fallback_used
+            else preferred_result
+        )
         selected_debug = dict(selected_result.debug or {})
         region_debug = dict(selected_debug.get("region_debug", {}))
         region_debug.update(
@@ -764,17 +790,23 @@ class PoseSolveLayer:
                     wall_pair.name for wall_pair in wall_pairs
                 ],
                 "selected_wall_pair_name": selected_result.wall_pair_name,
+                "preferred_solver_candidate_wall_pair_name": preferred_result.wall_pair_name,
                 "selected_solver_candidate_index": selected_index,
                 "solver_candidate_count": len(candidate_results),
+                "credible_solver_candidate_indices": credible_indices,
+                "credible_solver_candidate_count": len(credible_indices),
+                "dual_wall_pair_front_x_fallback_used": fallback_used,
                 "solver_candidates": [
                     self._build_solver_candidate_debug(
                         result=candidate_result,
-                        selected=index == selected_index,
+                        selected=index == selected_index and not fallback_used,
+                        preferred=index == selected_index,
+                        credible=index in credible_indices,
                     )
                     for index, candidate_result in enumerate(candidate_results)
                 ],
                 "selection_strategy": (
-                    "prefer_refined_then_lower_residual_then_more_hits_then_closer_to_lidar"
+                    "prefer_credible_candidates_then_lower_residual_then_more_hits_then_closer_to_lidar"
                 ),
             }
         )
@@ -782,13 +814,20 @@ class PoseSolveLayer:
         return replace(selected_result, debug=selected_debug)
 
     def _select_best_solver_candidate_index(
-        self, candidate_results: List[SolveResult]
+        self,
+        candidate_results: List[SolveResult],
+        candidate_indices: Optional[List[int]] = None,
     ) -> int:
         if not candidate_results:
             raise RuntimeError("dual wall-pair region produced no solver candidates")
-        best_index = 0
-        best_key = self._solver_candidate_sort_key(candidate_results[0])
-        for index, candidate_result in enumerate(candidate_results[1:], start=1):
+        if candidate_indices is None:
+            candidate_indices = list(range(len(candidate_results)))
+        if not candidate_indices:
+            raise RuntimeError("dual wall-pair region candidate index set is empty")
+        best_index = candidate_indices[0]
+        best_key = self._solver_candidate_sort_key(candidate_results[best_index])
+        for index in candidate_indices[1:]:
+            candidate_result = candidate_results[index]
             candidate_key = self._solver_candidate_sort_key(candidate_result)
             if candidate_key < best_key:
                 best_index = index
@@ -844,10 +883,14 @@ class PoseSolveLayer:
         result: SolveResult,
         *,
         selected: bool,
+        preferred: bool,
+        credible: bool,
     ) -> Dict[str, Any]:
         delta_xy_norm_m, delta_yaw_deg = self._result_correction_metrics(result)
         candidate_debug = {
             "selected": selected,
+            "preferred": preferred,
+            "credible": credible,
             "state": result.state,
             "reason": result.reason,
             "localized": result.localized,
@@ -870,6 +913,225 @@ class PoseSolveLayer:
                 "yaw_deg": self._debug_float(candidate_pose.get("yaw_deg")),
             }
         return candidate_debug
+
+    def _is_dual_wall_pair_candidate_credible(
+        self,
+        result: SolveResult,
+        solver_cfg: Dict[str, Any],
+    ) -> bool:
+        if result.state != STATE_REFINED:
+            return False
+        if (
+            result.x is None
+            or result.y is None
+            or result.yaw_deg is None
+            or not math.isfinite(float(result.x))
+            or not math.isfinite(float(result.y))
+            or not math.isfinite(float(result.yaw_deg))
+        ):
+            return False
+
+        residual_thresh_m = float(solver_cfg.get("residual_thresh_m", 0.03))
+        min_valid_corner_beams = int(solver_cfg.get("min_valid_corner_beams", 3))
+        max_correction_xy_m = float(solver_cfg.get("max_correction_xy_m", 0.15))
+        max_correction_yaw_deg = float(solver_cfg.get("max_correction_yaw_deg", 10.0))
+
+        if result.residual_m is None or not math.isfinite(float(result.residual_m)):
+            return False
+        if float(result.residual_m) > residual_thresh_m:
+            return False
+        if int(result.target_hit_count) < min_valid_corner_beams:
+            return False
+
+        delta_xy_norm_m, delta_yaw_deg = self._result_correction_metrics(result)
+        if delta_xy_norm_m > max_correction_xy_m:
+            return False
+        if delta_yaw_deg > max_correction_yaw_deg:
+            return False
+        return True
+
+    def _build_dual_wall_pair_front_x_fallback_result(
+        self,
+        coarse: CoarsePose,
+        range_frame: RangeFrame,
+        wall_pairs: List[WallPair],
+        solver_cfg: Dict[str, Any],
+        prior_age_ms: float,
+        region_name: Optional[str] = None,
+        usable_sensor_count: int = 0,
+        debug: Optional[Dict[str, Any]] = None,
+    ) -> SolveResult:
+        front_beam = "front_center"
+        beam_mode = "front_x_lidar_yaw_fallback"
+        selected_beams = [front_beam]
+        selected_beam_count = len(selected_beams)
+        selected_valid_beam_count = (
+            1 if range_frame.valid.get(front_beam, False) else 0
+        )
+        fallback_debug = dict(debug or {})
+        solver_debug = dict(fallback_debug.get("solver_debug", {}))
+        solver_debug.update(
+            {
+                "beam_mode": beam_mode,
+                "x_beam": front_beam,
+                "fallback_mode": "front_x_with_lidar_yaw",
+                "fallback_trigger": "all_dual_wall_pair_candidates_rejected",
+                "front_beam_valid": bool(range_frame.valid.get(front_beam, False)),
+            }
+        )
+        fallback_debug["solver_debug"] = solver_debug
+
+        if not range_frame.valid.get(front_beam, False):
+            solver_debug["fallback_failure_reason"] = "FRONT_BEAM_INVALID"
+            fallback_debug["solver_debug"] = solver_debug
+            return self._make_coarse_result(
+                coarse,
+                reason="DUAL_WALL_PAIR_FRONT_X_FALLBACK_UNAVAILABLE",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=fallback_debug,
+                region_name=region_name,
+                beam_mode=beam_mode,
+                selected_beams=selected_beams,
+            )
+
+        x_wall, failure_reason = self._resolve_dual_wall_pair_front_x_fallback_wall(
+            wall_pairs
+        )
+        if x_wall is None:
+            solver_debug["fallback_failure_reason"] = failure_reason
+            fallback_debug["solver_debug"] = solver_debug
+            return self._make_coarse_result(
+                coarse,
+                reason="DUAL_WALL_PAIR_FRONT_X_FALLBACK_UNAVAILABLE",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=fallback_debug,
+                region_name=region_name,
+                beam_mode=beam_mode,
+                selected_beams=selected_beams,
+            )
+
+        front_range = range_frame.ranges.get(front_beam)
+        if front_range is None or not math.isfinite(float(front_range)):
+            solver_debug["fallback_failure_reason"] = "FRONT_RANGE_NON_FINITE"
+            fallback_debug["solver_debug"] = solver_debug
+            return self._make_coarse_result(
+                coarse,
+                reason="DUAL_WALL_PAIR_FRONT_X_FALLBACK_UNAVAILABLE",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=fallback_debug,
+                region_name=region_name,
+                beam_mode=beam_mode,
+                selected_beams=selected_beams,
+            )
+
+        mount = self.sensor_mounts[front_beam]
+        origin_dx, _origin_dy = rotate_2d(mount.pos_x, mount.pos_y, coarse.yaw_deg)
+        dir_dx, _dir_dy = rotate_2d(mount.dir_x, mount.dir_y, coarse.yaw_deg)
+        if abs(dir_dx) <= 1e-6:
+            solver_debug["fallback_failure_reason"] = "FRONT_BEAM_PARALLEL_TO_X_WALL"
+            fallback_debug["solver_debug"] = solver_debug
+            return self._make_coarse_result(
+                coarse,
+                reason="DUAL_WALL_PAIR_FRONT_X_FALLBACK_UNAVAILABLE",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=fallback_debug,
+                region_name=region_name,
+                beam_mode=beam_mode,
+                selected_beams=selected_beams,
+            )
+
+        x_map = float(x_wall.const_value) - origin_dx - float(front_range) * dir_dx
+        delta_x = x_map - coarse.x
+        max_correction_xy_m = float(solver_cfg.get("max_correction_xy_m", 0.15))
+        max_correction_yaw_deg = float(solver_cfg.get("max_correction_yaw_deg", 10.0))
+        fallback_debug = self._with_solver_debug(
+            fallback_debug,
+            candidate_pose={
+                "x": x_map,
+                "y": coarse.y,
+                "yaw_deg": coarse.yaw_deg,
+            },
+            correction_debug={
+                "delta_x_m": delta_x,
+                "delta_y_m": 0.0,
+                "delta_xy_norm_m": abs(delta_x),
+                "delta_yaw_deg": 0.0,
+                "max_correction_xy_m": max_correction_xy_m,
+                "max_correction_yaw_deg": max_correction_yaw_deg,
+            },
+        )
+        solver_debug = dict(fallback_debug.get("solver_debug", {}))
+        solver_debug.update(
+            {
+                "front_wall_name": x_wall.name,
+                "front_wall_const_x_m": self._debug_float(x_wall.const_value),
+                "front_beam_range_m": self._debug_float(float(front_range)),
+            }
+        )
+        fallback_debug["solver_debug"] = solver_debug
+        return self._make_result(
+            state=STATE_REFINED,
+            reason="OK",
+            pose_source="front_laser_x_with_lidar_yaw",
+            localized=True,
+            x=x_map,
+            y=coarse.y,
+            yaw_deg=coarse.yaw_deg,
+            valid_beam_count=selected_valid_beam_count,
+            prior_age_ms=prior_age_ms,
+            usable_sensor_count=usable_sensor_count,
+            selected_beam_count=selected_beam_count,
+            selected_valid_beam_count=selected_valid_beam_count,
+            target_hit_count=selected_valid_beam_count,
+            debug=fallback_debug,
+            region_name=region_name,
+            beam_mode=beam_mode,
+            selected_beams=selected_beams,
+        )
+
+    def _resolve_dual_wall_pair_front_x_fallback_wall(
+        self,
+        wall_pairs: List[WallPair],
+    ) -> Tuple[Optional[WallSegment], Optional[str]]:
+        if not wall_pairs:
+            return None, "NO_DUAL_WALL_PAIRS"
+
+        x_walls: List[WallSegment] = []
+        for wall_pair in wall_pairs:
+            if wall_pair.x_wall_role != "front":
+                return None, "X_WALL_ROLE_IS_NOT_FRONT"
+            x_wall = self.walls.get(wall_pair.x_wall_name)
+            if x_wall is None:
+                return None, "X_WALL_MISSING"
+            if x_wall.orientation != "vertical":
+                return None, "X_WALL_IS_NOT_VERTICAL"
+            x_walls.append(x_wall)
+
+        ref_wall = x_walls[0]
+        for x_wall in x_walls[1:]:
+            if not math.isclose(
+                float(x_wall.const_value),
+                float(ref_wall.const_value),
+                abs_tol=1e-6,
+            ):
+                return None, "X_WALLS_NOT_COLOCATED"
+        return ref_wall, None
 
     def _solve_closed_form(
         self,
