@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -91,39 +92,44 @@ class PoseSolveLayer:
 
         prior_age_ms = max(0.0, time_diff_ms(now, range_frame.stamp))
         usable_sensor_count = self._count_usable_sensors(range_frame)
-        if region_match is None or region_match.wall_pair is None:
+        debug_payload = self._build_debug_payload(
+            coarse=coarse,
+            transport_delay_ms=transport_delay_ms,
+            range_frame_found=True,
+            prior_age_ms=prior_age_ms,
+            range_frame_count=1,
+            region_debug=region_debug,
+        )
+        if region_match is None or not region_match.wall_pairs:
             return self._make_coarse_result(
                 coarse,
                 reason="NO_REGION_MATCHED",
                 prior_age_ms=prior_age_ms,
                 usable_sensor_count=usable_sensor_count,
-                debug=self._build_debug_payload(
-                    coarse=coarse,
-                    transport_delay_ms=transport_delay_ms,
-                    range_frame_found=True,
-                    prior_age_ms=prior_age_ms,
-                    range_frame_count=1,
-                    region_debug=region_debug,
-                ),
+                debug=debug_payload,
             )
 
         solver_cfg = scene_cfg.get("solver", {})
-        return self._solve_closed_form(
+        if len(region_match.wall_pairs) == 1:
+            return self._solve_closed_form(
+                coarse=coarse,
+                range_frame=range_frame,
+                wall_pair=region_match.wall_pairs[0],
+                solver_cfg=solver_cfg,
+                prior_age_ms=prior_age_ms,
+                region_name=region_match.name,
+                usable_sensor_count=usable_sensor_count,
+                debug=debug_payload,
+            )
+        return self._solve_dual_wall_pair_region(
             coarse=coarse,
             range_frame=range_frame,
-            wall_pair=region_match.wall_pair,
+            wall_pairs=region_match.wall_pairs,
             solver_cfg=solver_cfg,
             prior_age_ms=prior_age_ms,
             region_name=region_match.name,
             usable_sensor_count=usable_sensor_count,
-            debug=self._build_debug_payload(
-                coarse=coarse,
-                transport_delay_ms=transport_delay_ms,
-                range_frame_found=True,
-                prior_age_ms=prior_age_ms,
-                range_frame_count=1,
-                region_debug=region_debug,
-            ),
+            debug=debug_payload,
         )
 
     def _parse_sensor_mounts(self, config: Dict[str, Any]) -> Dict[str, SensorMount]:
@@ -277,16 +283,28 @@ class PoseSolveLayer:
                         "Each wall_selector region must define either x_range/y_range or x/y"
                     )
 
-                pair_name = region.get("active_wall_pair")
-                if pair_name is None or isinstance(pair_name, list):
-                    raise RuntimeError(
-                        "Each wall_selector region must bind exactly one active_wall_pair"
-                    )
-                if str(pair_name) not in self.wall_pairs:
+                pair_names = self._region_wall_pair_names(region)
+                if "active_wall_pair" in region and "active_wall_pairs" in region:
                     raise RuntimeError(
                         f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                        f"references unknown active_wall_pair '{pair_name}'"
+                        "cannot define both active_wall_pair and active_wall_pairs"
                     )
+                if not pair_names:
+                    raise RuntimeError(
+                        f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                        "must define active_wall_pair or exactly two active_wall_pairs"
+                    )
+                if len(pair_names) != len(set(pair_names)):
+                    raise RuntimeError(
+                        f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                        "active_wall_pair names must be unique"
+                    )
+                for pair_name in pair_names:
+                    if pair_name not in self.wall_pairs:
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            f"references unknown active_wall_pair '{pair_name}'"
+                        )
                 if "yaw_deg" in region:
                     float(region["yaw_deg"])
                     yaw_tolerance_deg = float(
@@ -308,7 +326,20 @@ class PoseSolveLayer:
                         raise RuntimeError(
                             f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
                             "max_lidar_distance_to_center_m must be >= 0"
-        )
+                        )
+
+    def _region_wall_pair_names(self, region: Dict[str, Any]) -> List[str]:
+        if "active_wall_pair" in region:
+            pair_name = region.get("active_wall_pair")
+            if pair_name is None or isinstance(pair_name, list):
+                return []
+            return [str(pair_name)]
+        if "active_wall_pairs" in region:
+            pair_names = region.get("active_wall_pairs")
+            if not isinstance(pair_names, list) or len(pair_names) != 2:
+                return []
+            return [str(pair_name) for pair_name in pair_names]
+        return []
 
     def _is_finite_pose(self, coarse: CoarsePose) -> bool:
         return (
@@ -380,42 +411,43 @@ class PoseSolveLayer:
                 best_yaw_error_deg = yaw_error_deg
 
         matched_region_name: Optional[str] = None
-        matched_wall_pair_name: Optional[str] = None
         if best_region is None:
             return None, {
                 "evaluated": True,
                 "matched": False,
                 "matched_region_name": None,
                 "matched_wall_pair_name": None,
+                "matched_wall_pair_names": None,
                 "candidate_count": len(candidate_debug),
                 "candidates": candidate_debug,
             }
 
-        pair_name = best_region.get("active_wall_pair")
-        if pair_name is None:
+        pair_names = self._region_wall_pair_names(best_region)
+        if not pair_names:
             return None, {
                 "evaluated": True,
                 "matched": False,
                 "matched_region_name": str(best_region.get("name", "")),
                 "matched_wall_pair_name": None,
+                "matched_wall_pair_names": None,
                 "candidate_count": len(candidate_debug),
                 "candidates": candidate_debug,
             }
-        wall_pair = self.wall_pairs.get(str(pair_name))
+        wall_pairs = [self.wall_pairs[pair_name] for pair_name in pair_names]
         matched_region_name = str(best_region.get("name", ""))
-        matched_wall_pair_name = str(pair_name)
         for candidate in candidate_debug:
             if candidate.get("name") == matched_region_name:
                 candidate["matched"] = True
 
         return RegionMatch(
             name=matched_region_name,
-            wall_pair=wall_pair,
+            wall_pairs=wall_pairs,
         ), {
             "evaluated": True,
-            "matched": wall_pair is not None,
+            "matched": bool(wall_pairs),
             "matched_region_name": matched_region_name,
-            "matched_wall_pair_name": matched_wall_pair_name if wall_pair is not None else None,
+            "matched_wall_pair_name": pair_names[0] if len(pair_names) == 1 else None,
+            "matched_wall_pair_names": pair_names,
             "candidate_count": len(candidate_debug),
             "candidates": candidate_debug,
         }
@@ -436,6 +468,7 @@ class PoseSolveLayer:
             "position_match": position_match,
             "yaw_match": yaw_match,
             "matched": False,
+            "active_wall_pair_names": self._region_wall_pair_names(region),
             "position_score_m": self._debug_float(position_score),
             "yaw_error_deg": self._debug_float(yaw_error_deg),
             "expected_yaw_deg": (
@@ -694,6 +727,149 @@ class PoseSolveLayer:
             selected_beams=selected_beams,
             yaw_in_corner_deg=yaw_in_corner_deg,
         )
+
+    def _solve_dual_wall_pair_region(
+        self,
+        coarse: CoarsePose,
+        range_frame: RangeFrame,
+        wall_pairs: List[WallPair],
+        solver_cfg: Dict[str, Any],
+        prior_age_ms: float,
+        region_name: Optional[str] = None,
+        usable_sensor_count: int = 0,
+        debug: Optional[Dict[str, Any]] = None,
+    ) -> SolveResult:
+        candidate_results = [
+            self._solve_closed_form(
+                coarse=coarse,
+                range_frame=range_frame,
+                wall_pair=wall_pair,
+                solver_cfg=solver_cfg,
+                prior_age_ms=prior_age_ms,
+                region_name=region_name,
+                usable_sensor_count=usable_sensor_count,
+                debug=debug,
+            )
+            for wall_pair in wall_pairs
+        ]
+        selected_index = self._select_best_solver_candidate_index(candidate_results)
+        selected_result = candidate_results[selected_index]
+        selected_debug = dict(selected_result.debug or {})
+        region_debug = dict(selected_debug.get("region_debug", {}))
+        region_debug.update(
+            {
+                "multi_wall_pair_mode": True,
+                "matched_wall_pair_name": None,
+                "matched_wall_pair_names": [
+                    wall_pair.name for wall_pair in wall_pairs
+                ],
+                "selected_wall_pair_name": selected_result.wall_pair_name,
+                "selected_solver_candidate_index": selected_index,
+                "solver_candidate_count": len(candidate_results),
+                "solver_candidates": [
+                    self._build_solver_candidate_debug(
+                        result=candidate_result,
+                        selected=index == selected_index,
+                    )
+                    for index, candidate_result in enumerate(candidate_results)
+                ],
+                "selection_strategy": (
+                    "prefer_refined_then_lower_residual_then_more_hits_then_closer_to_lidar"
+                ),
+            }
+        )
+        selected_debug["region_debug"] = region_debug
+        return replace(selected_result, debug=selected_debug)
+
+    def _select_best_solver_candidate_index(
+        self, candidate_results: List[SolveResult]
+    ) -> int:
+        if not candidate_results:
+            raise RuntimeError("dual wall-pair region produced no solver candidates")
+        best_index = 0
+        best_key = self._solver_candidate_sort_key(candidate_results[0])
+        for index, candidate_result in enumerate(candidate_results[1:], start=1):
+            candidate_key = self._solver_candidate_sort_key(candidate_result)
+            if candidate_key < best_key:
+                best_index = index
+                best_key = candidate_key
+        return best_index
+
+    def _solver_candidate_sort_key(
+        self, result: SolveResult
+    ) -> Tuple[int, float, int, float, float, int, float, str]:
+        if result.state == STATE_REFINED:
+            state_rank = 0
+        elif result.state == STATE_COARSE_ONLY:
+            state_rank = 1
+        else:
+            state_rank = 2
+        delta_xy_norm_m, delta_yaw_deg = self._result_correction_metrics(result)
+        residual_rank = (
+            float(result.residual_m)
+            if result.residual_m is not None
+            else float("inf")
+        )
+        return (
+            state_rank,
+            residual_rank,
+            -int(result.target_hit_count),
+            delta_xy_norm_m,
+            delta_yaw_deg,
+            -int(result.selected_valid_beam_count),
+            -float(result.score),
+            str(result.reason),
+        )
+
+    def _result_correction_metrics(self, result: SolveResult) -> Tuple[float, float]:
+        correction_debug = (
+            (result.debug or {})
+            .get("solver_debug", {})
+            .get("correction_debug", {})
+        )
+        delta_xy_norm_m = correction_debug.get("delta_xy_norm_m")
+        delta_yaw_deg = correction_debug.get("delta_yaw_deg")
+        if delta_xy_norm_m is None or not math.isfinite(float(delta_xy_norm_m)):
+            delta_xy_norm_m = float("inf")
+        else:
+            delta_xy_norm_m = float(delta_xy_norm_m)
+        if delta_yaw_deg is None or not math.isfinite(float(delta_yaw_deg)):
+            delta_yaw_deg = float("inf")
+        else:
+            delta_yaw_deg = abs(float(delta_yaw_deg))
+        return delta_xy_norm_m, delta_yaw_deg
+
+    def _build_solver_candidate_debug(
+        self,
+        result: SolveResult,
+        *,
+        selected: bool,
+    ) -> Dict[str, Any]:
+        delta_xy_norm_m, delta_yaw_deg = self._result_correction_metrics(result)
+        candidate_debug = {
+            "selected": selected,
+            "state": result.state,
+            "reason": result.reason,
+            "localized": result.localized,
+            "wall_pair_name": result.wall_pair_name,
+            "beam_mode": result.beam_mode,
+            "score": self._debug_float(result.score),
+            "residual_m": self._debug_float(result.residual_m),
+            "target_hit_count": int(result.target_hit_count),
+            "selected_beam_count": int(result.selected_beam_count),
+            "selected_valid_beam_count": int(result.selected_valid_beam_count),
+            "delta_xy_norm_m": self._debug_float(delta_xy_norm_m),
+            "delta_yaw_deg": self._debug_float(delta_yaw_deg),
+        }
+        solver_debug = (result.debug or {}).get("solver_debug", {})
+        candidate_pose = solver_debug.get("candidate_pose")
+        if isinstance(candidate_pose, dict):
+            candidate_debug["candidate_pose"] = {
+                "x": self._debug_float(candidate_pose.get("x")),
+                "y": self._debug_float(candidate_pose.get("y")),
+                "yaw_deg": self._debug_float(candidate_pose.get("yaw_deg")),
+            }
+        return candidate_debug
 
     def _solve_closed_form(
         self,

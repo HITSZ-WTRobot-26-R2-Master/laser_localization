@@ -23,6 +23,11 @@ corner_pool:
   red_c01: [0.0, -0.15]    ## red矛头架贴场地最边缘
   red_c02: [0.0, -2.0]    ## red_r2启动区处边缘点
 
+  red_c03: [2.0, 0.0]
+  red_c04: [3.2, 0.0]
+  red_c05: [2.0, -6.0]
+  red_c06: [3.2, -6.0]
+
   red_forest03_leftbottom:  [3.2, -1.2]
   red_forest03_rightbottom: [3.2, -2.4]
   red_forest02_rightbottom: [3.2, -3.6]
@@ -61,6 +66,22 @@ wall_pool:
   red_edge_wall:
     from: red_c01
     to: red_c02
+    enabled: true
+  red_forest_front_left:
+    from: red_c04
+    to: red_forest01_rightbottom
+    enabled: true
+  red_forest_front_right:
+    from: red_c06
+    to: red_forest03_leftbottom
+    enabled: true
+  red_forest_left:
+    from: red_c03
+    to: red_c04
+    enabled: true
+  red_forest_right:
+    from: red_c05
+    to: red_c06
     enabled: true
   red_forest03_right:
     from: red_forest03_rightbottom
@@ -129,7 +150,7 @@ wall_pool:
   red_forest11_right:
     from: red_forest11_righttop
     to: red_forest08_righttop
-  
+    enabled: true
   
 
 ##------------蓝色墙池---------------##
@@ -156,6 +177,30 @@ wall_pair_candidates:
       x: 0.0
       y: -0.15
       yaw_deg: -90.0
+
+  red_forest_frontleft:
+    x_wall:
+      wall: red_forest_front_left
+      role: front
+    side_wall:
+      wall: red_forest_left
+      role: left
+    corner_world_pose:
+      x: 3.2
+      y: 0
+      yaw_deg: 0.0
+  
+  red_forest_frontright:
+    x_wall:
+      wall: red_forest_front_right
+      role: front
+    side_wall:
+      wall: red_forest_right
+      role: right
+    corner_world_pose:
+      x: 3.2
+      y: -6.0
+      yaw_deg: 0.0
 
   red_forest02_region_yaw0:
     x_wall:
@@ -398,11 +443,20 @@ scene_profiles:
     wall_selector:
       yaw_tolerance_deg: 10.0
       regions:
+        ## Special-case region support:
+        ## use active_wall_pairs: [pair_a, pair_b] to run two solvers and publish only the selected result
         - name: red_spear_region_yaw-90
           x_range: [0.36, 1.4]       ## 距离矛头架两侧边缘10mm
           y_range: [-1.4, -0.15]
           yaw_deg: -90.0
           active_wall_pair: red_spear_region_yaw-90
+          priority: 100
+
+        - name: red_forest_front
+          x_range: [2.0, 3.2]
+          y_range: [-4.8, -1.2]
+          yaw_deg: 0.0
+          active_wall_pairs: [red_forest_frontleft, red_forest_frontright]
           priority: 100
 
         - name: red_forest02_region_yaw0

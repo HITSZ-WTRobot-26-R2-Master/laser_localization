@@ -93,7 +93,7 @@ class WallPair:
 @dataclass
 class RegionMatch:
     name: str
-    wall_pair: Optional[WallPair]
+    wall_pairs: List[WallPair]
 
 
 @dataclass
