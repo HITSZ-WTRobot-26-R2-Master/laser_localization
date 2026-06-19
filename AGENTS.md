@@ -6,6 +6,8 @@ This repository contains the ROS 2 package `agv_pose_refiner`, built with `ament
 
 Configuration is split across three YAML files: `config/sensors.yaml` (mount positions and directions for 6 TOF sensors), `config/topics.yaml` (ROS topic names, serial port/baudrate/polling config, sensor-to-device mapping), `config/map_and_solver.yaml` (world geometry — walls, corners, wall pairs, scene profiles, solver tuning parameters).
 
+In the root Docker Compose stack, only root `config/laser/sensors.yaml` is mounted over package `config/sensors.yaml`. The package-local `config/map_and_solver.yaml` is the runtime source for map geometry and solver tuning; do not expect a root-level `config/laser/map_and_solver.yaml` override.
+
 ROS metadata is in `package.xml`, build/install rules are in `CMakeLists.txt`, Python packaging compatibility metadata is in `setup.py` and `setup.cfg`. Launch files live in `launch/`; `agv_pose_refiner.launch.py` starts the node with the three config file paths.
 
 Do not add project logic to generated or workspace-level build output directories such as `build/`, `install/`, or `log/`. Keep node code in the Python package and configuration in `config/`. Do not define package-local pose/status messages here; use the shared `interfaces` package for `R2Pose`.
