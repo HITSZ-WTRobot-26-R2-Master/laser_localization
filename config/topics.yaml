@@ -1,11 +1,11 @@
 # ⚠️ 此文件已失效 —— 保留仅作为配置模板参考。
 #
 # 串口和话题配置已迁移至主仓库 config/config.yaml 的 agv_pose_refiner.ros__parameters 段落，
-# 通过 ROS2 参数系统加载。传感器映射 (sensor_map) 已迁移至 config/laser/sensors.yaml。
+# 通过 ROS2 参数系统加载。传感器映射 (sensor_map) 位于本 package 的 config/sensors.yaml。
 #
 # 运行时实际生效的配置来源：
 #   - 串口 / 话题 / 轮询参数：config/config.yaml (ROS2 params_file)
-#   - 传感器映射 + 安装参数：config/laser/sensors.yaml (Docker 挂载覆盖)
+#   - 传感器映射 + 安装参数：src/positioning/laser_localization/config/sensors.yaml
 #   - 地图 + 解算器参数：src/positioning/laser_localization/config/map_and_solver.yaml
 #
 # 此文件不再被 agv_pose_refiner 节点加载，请勿修改或依赖此文件中的值。

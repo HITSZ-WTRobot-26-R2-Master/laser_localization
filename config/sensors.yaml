@@ -1,9 +1,9 @@
-# ⚠️ 此文件仅作为子模块配置模板，Docker 运行时会被主仓库 config/laser/sensors.yaml 覆盖。
-# 所有正式配置变更请到主仓库 config/laser/ 目录进行。
+# 此文件是 laser_localization 的 Docker 运行时传感器配置。
+# 根仓库 docker-compose.yaml 会只读挂载整个 package config/ 目录。
 #
 # 配置来源说明：
-#   - sensor_mounts: 传感器物理安装参数（主仓库覆盖）
-#   - sensor_map:    逻辑传感器到物理设备的映射（主仓库覆盖）
+#   - sensor_mounts: 传感器物理安装参数
+#   - sensor_map:    逻辑传感器到物理设备的映射
 
 sensor_mounts:
   front_center:

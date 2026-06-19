@@ -954,11 +954,11 @@ scene_profiles:
       regions:
         ## Special-case region support:
         ## use active_wall_pairs: [pair_a, pair_b] to run two solvers and publish only the selected result
-        - name: blue_spear_region_yaw-90
+        - name: blue_spear_region_yaw90
           x_range: [0.36, 1.4]       ## 距离矛头架两侧边缘10mm
           y_range: [0.15, 1.4]
           yaw_deg: -90.0
-          active_wall_pair: blue_spear_region_yaw-90
+          active_wall_pair: blue_spear_region_yaw90
           priority: 100
 
         - name: blue_forest_front
