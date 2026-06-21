@@ -19,8 +19,8 @@ scene_manager:
 
 corner_pool:
 ##------------红方角点---------------##
-  red_c00: [1.55, -0.15]    ## red矛头架远端
-  red_c01: [0.0, -0.15]    ## red矛头架贴场地最边缘
+  red_c00: [1.55, -0.125]    ## red矛头架远端
+  red_c01: [0.0, -0.125]    ## red矛头架贴场地最边缘
   red_c02: [0.0, -2.0]    ## red_r2启动区处边缘点
 
   red_c03: [2.0, 0.0]
@@ -52,8 +52,8 @@ corner_pool:
 
  
 ##------------蓝方角点---------------##
-  blue_c00: [1.55, 0.15]    ## blue矛头架远端
-  blue_c01: [0.0, 0.15]    ## blue矛头架贴场地最边缘
+  blue_c00: [1.55, 0.125]    ## blue矛头架远端
+  blue_c01: [0.0, 0.125]    ## blue矛头架贴场地最边缘
   blue_c02: [0.0, 2.0]    ## blue_r2启动区处边缘点
 
   blue_c03: [2.0, 0.0]
@@ -285,7 +285,7 @@ wall_pair_candidates:
       role: right
     corner_world_pose:
       x: 0.0
-      y: -0.15
+      y: -0.125
       yaw_deg: -90.0
 
   red_forest_frontleft:
@@ -539,7 +539,7 @@ wall_pair_candidates:
       role: left
     corner_world_pose:
       x: 0.0
-      y: 0.15
+      y: 0.125
       yaw_deg: 90.0
 
   blue_forest_frontleft:
@@ -797,7 +797,7 @@ scene_profiles:
         ## use active_wall_pairs: [pair_a, pair_b] to run two solvers and publish only the selected result
         - name: red_spear_region_yaw-90
           x_range: [0.36, 1.4]       ## 距离矛头架两侧边缘10mm
-          y_range: [-1.4, -0.15]
+          y_range: [-1.4, -0.125]
           yaw_deg: -90.0
           active_wall_pair: red_spear_region_yaw-90
           priority: 100
@@ -956,7 +956,7 @@ scene_profiles:
         ## use active_wall_pairs: [pair_a, pair_b] to run two solvers and publish only the selected result
         - name: blue_spear_region_yaw90
           x_range: [0.36, 1.4]       ## 距离矛头架两侧边缘10mm
-          y_range: [0.15, 1.4]
+          y_range: [0.125, 1.4]
           yaw_deg: -90.0
           active_wall_pair: blue_spear_region_yaw90
           priority: 100
