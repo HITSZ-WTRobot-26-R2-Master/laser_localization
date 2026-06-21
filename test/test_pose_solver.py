@@ -8,7 +8,16 @@ install_test_stubs()
 
 from rclpy.time import Time
 
-from agv_pose_refiner_py.common import CoarsePose, SolveResult, WallPair
+from agv_pose_refiner_py.common import (
+    SENSOR_ORDER,
+    CoarsePose,
+    RangeFrame,
+    SensorGeometry,
+    SensorMount,
+    SolveResult,
+    WallPair,
+    WallSegment,
+)
 from agv_pose_refiner_py.pose_solver import (
     STATE_CANNOT_LOCALIZE,
     STATE_COARSE_ONLY,
@@ -107,6 +116,30 @@ class TestDualWallPairRegionSupport(unittest.TestCase):
 
         self.solver._validate_scene_profiles(scene_profiles)
 
+    def test_validate_scene_profiles_accepts_special_solver_region(self) -> None:
+        scene_profiles = {
+            "scene": {
+                "wall_selector": {
+                    "regions": [
+                        {
+                            "name": "special_region",
+                            "x_range": [1.0, 2.0],
+                            "y_range": [3.0, 4.0],
+                            "active_wall_pair": "pair_a",
+                            "special_solver": {
+                                "type": "compensated_front_side",
+                                "compensation_x0_m": 0.125,
+                                "max_iterations": 8,
+                                "theta_tolerance_deg": 0.01,
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+
+        self.solver._validate_scene_profiles(scene_profiles)
+
     def test_select_region_match_returns_both_wall_pairs(self) -> None:
         coarse = CoarsePose(
             stamp=Time(nanoseconds=0),
@@ -144,6 +177,49 @@ class TestDualWallPairRegionSupport(unittest.TestCase):
         self.assertEqual(
             region_debug["matched_wall_pair_names"],
             ["pair_a", "pair_b"],
+        )
+
+    def test_select_region_match_preserves_special_solver_config(self) -> None:
+        coarse = CoarsePose(
+            stamp=Time(nanoseconds=0),
+            x=1.5,
+            y=3.5,
+            z=0.0,
+            roll_rad=0.0,
+            pitch_rad=0.0,
+            yaw_deg=0.0,
+        )
+        scene_cfg = {
+            "wall_selector": {
+                "regions": [
+                    {
+                        "name": "special_region",
+                        "x_range": [1.0, 2.0],
+                        "y_range": [3.0, 4.0],
+                        "active_wall_pair": "pair_a",
+                        "special_solver": {
+                            "type": "compensated_front_side",
+                            "compensation_x0_m": 0.125,
+                        },
+                    }
+                ]
+            }
+        }
+
+        region_match, region_debug = self.solver._select_region_match_with_debug(
+            scene_cfg, coarse
+        )
+
+        self.assertIsNotNone(region_match)
+        self.assertEqual(region_match.name, "special_region")
+        self.assertIsNotNone(region_match.region_config)
+        self.assertEqual(
+            region_match.region_config["special_solver"]["type"],
+            "compensated_front_side",
+        )
+        self.assertEqual(
+            region_debug["matched_special_solver_type"],
+            "compensated_front_side",
         )
 
     def test_select_best_solver_candidate_prefers_refined_result(self) -> None:
@@ -209,6 +285,244 @@ class TestDualWallPairRegionSupport(unittest.TestCase):
         )
 
         self.assertEqual(selected_index, 1)
+
+
+class TestCompensatedFrontSideSolver(unittest.TestCase):
+    def setUp(self) -> None:
+        self.solver = PoseSolveLayer.__new__(PoseSolveLayer)
+        pair_spacing_m = 0.45816
+        half_pair_spacing_m = pair_spacing_m * 0.5
+        zero_mount = dict(min_range_m=0.01, max_range_m=20.0)
+        self.solver.sensor_mounts = {
+            "front_center": SensorMount(
+                pos_x=0.0,
+                pos_y=0.0,
+                dir_x=1.0,
+                dir_y=0.0,
+                **zero_mount,
+            ),
+            "rear_center": SensorMount(
+                pos_x=0.0,
+                pos_y=0.0,
+                dir_x=-1.0,
+                dir_y=0.0,
+                **zero_mount,
+            ),
+            "left_front": SensorMount(
+                pos_x=half_pair_spacing_m,
+                pos_y=0.0,
+                dir_x=0.0,
+                dir_y=1.0,
+                **zero_mount,
+            ),
+            "left_rear": SensorMount(
+                pos_x=-half_pair_spacing_m,
+                pos_y=0.0,
+                dir_x=0.0,
+                dir_y=1.0,
+                **zero_mount,
+            ),
+            "right_front": SensorMount(
+                pos_x=half_pair_spacing_m,
+                pos_y=0.0,
+                dir_x=0.0,
+                dir_y=-1.0,
+                **zero_mount,
+            ),
+            "right_rear": SensorMount(
+                pos_x=-half_pair_spacing_m,
+                pos_y=0.0,
+                dir_x=0.0,
+                dir_y=-1.0,
+                **zero_mount,
+            ),
+        }
+        self.solver.sensor_geometry = SensorGeometry(
+            x_front=0.0,
+            x_rear=0.0,
+            y_left=0.0,
+            y_right=0.0,
+            x_left_pair=pair_spacing_m,
+            x_right_pair=pair_spacing_m,
+        )
+        self.solver.walls = {
+            "red_special_front_vertical": WallSegment(
+                name="red_special_front_vertical",
+                orientation="vertical",
+                const_value=3.2,
+                min_axis=-2.4,
+                max_axis=0.0,
+            ),
+            "red_special_side_horizontal": WallSegment(
+                name="red_special_side_horizontal",
+                orientation="horizontal",
+                const_value=0.0,
+                min_axis=0.0,
+                max_axis=3.2,
+            ),
+            "blue_special_front_vertical": WallSegment(
+                name="blue_special_front_vertical",
+                orientation="vertical",
+                const_value=3.2,
+                min_axis=0.0,
+                max_axis=2.4,
+            ),
+            "blue_special_side_horizontal": WallSegment(
+                name="blue_special_side_horizontal",
+                orientation="horizontal",
+                const_value=0.0,
+                min_axis=0.0,
+                max_axis=3.2,
+            ),
+        }
+        self.solver.wall_pairs = {
+            "red_special_front_compensated": WallPair(
+                name="red_special_front_compensated",
+                x_wall_name="red_special_front_vertical",
+                x_wall_role="front",
+                side_wall_name="red_special_side_horizontal",
+                side_wall_role="left",
+                corner_x=3.2,
+                corner_y=0.0,
+                corner_yaw_deg=0.0,
+            ),
+            "blue_special_front_compensated": WallPair(
+                name="blue_special_front_compensated",
+                x_wall_name="blue_special_front_vertical",
+                x_wall_role="front",
+                side_wall_name="blue_special_side_horizontal",
+                side_wall_role="right",
+                corner_x=3.2,
+                corner_y=0.0,
+                corner_yaw_deg=0.0,
+            ),
+        }
+
+    def _make_scene_profile(
+        self,
+        *,
+        pair_name: str,
+        x_range: list[float],
+        y_range: list[float],
+    ) -> dict:
+        return {
+            "wall_selector": {
+                "yaw_tolerance_deg": 10.0,
+                "regions": [
+                    {
+                        "name": f"{pair_name}_region",
+                        "x_range": x_range,
+                        "y_range": y_range,
+                        "yaw_deg": 0.0,
+                        "active_wall_pair": pair_name,
+                        "special_solver": {
+                            "type": "compensated_front_side",
+                            "compensation_x0_m": 0.125,
+                            "max_iterations": 8,
+                            "theta_tolerance_deg": 0.01,
+                        },
+                        "priority": 200,
+                    }
+                ],
+            },
+            "solver": {
+                "min_valid_corner_beams": 3,
+                "max_theta_abs_deg": 45.0,
+                "wall_hit_tolerance_m": 1e-6,
+                "wall_extent_margin_m": 1e-6,
+                "max_correction_xy_m": 0.15,
+                "max_correction_yaw_deg": 10.0,
+                "residual_thresh_m": 0.03,
+            },
+        }
+
+    def _make_range_frame(self, **ranges: float) -> RangeFrame:
+        frame_ranges = {name: 0.0 for name in SENSOR_ORDER}
+        frame_valid = {name: False for name in SENSOR_ORDER}
+        for name, value in ranges.items():
+            frame_ranges[name] = value
+            frame_valid[name] = True
+        return RangeFrame(
+            stamp=Time(nanoseconds=0),
+            ranges=frame_ranges,
+            valid=frame_valid,
+        )
+
+    def test_refine_uses_compensated_special_solver_for_red_region(self) -> None:
+        self.solver.active_scene = "mode_red"
+        self.solver.scene_profiles = {
+            "mode_red": self._make_scene_profile(
+                pair_name="red_special_front_compensated",
+                x_range=[0.0, 0.8],
+                y_range=[-1.8, -1.0],
+            )
+        }
+        coarse = CoarsePose(
+            stamp=Time(nanoseconds=0),
+            x=0.6,
+            y=-1.125,
+            z=0.0,
+            roll_rad=0.0,
+            pitch_rad=0.0,
+            yaw_deg=0.0,
+        )
+        range_frame = self._make_range_frame(
+            front_center=2.6,
+            left_front=1.0,
+            left_rear=1.125,
+        )
+
+        result = self.solver.refine(coarse, range_frame, Time(nanoseconds=0))
+
+        self.assertEqual(result.state, STATE_REFINED)
+        self.assertEqual(result.pose_source, "compensated_front_side_corner_solver")
+        self.assertAlmostEqual(result.x, 0.6, places=6)
+        self.assertAlmostEqual(result.y, -1.125, places=6)
+        self.assertAlmostEqual(result.yaw_deg, 0.0, places=6)
+        self.assertAlmostEqual(result.residual_m, 0.0, places=6)
+        special_debug = result.debug["solver_debug"]["special_solver_debug"]
+        self.assertAlmostEqual(
+            special_debug["corrected_side_front_range_m"], 1.125, places=6
+        )
+        self.assertTrue(special_debug["theta_converged"])
+
+    def test_refine_uses_compensated_special_solver_for_blue_region(self) -> None:
+        self.solver.active_scene = "mode_blue"
+        self.solver.scene_profiles = {
+            "mode_blue": self._make_scene_profile(
+                pair_name="blue_special_front_compensated",
+                x_range=[0.0, 0.8],
+                y_range=[1.0, 1.8],
+            )
+        }
+        coarse = CoarsePose(
+            stamp=Time(nanoseconds=0),
+            x=0.6,
+            y=1.125,
+            z=0.0,
+            roll_rad=0.0,
+            pitch_rad=0.0,
+            yaw_deg=0.0,
+        )
+        range_frame = self._make_range_frame(
+            front_center=2.6,
+            right_front=1.0,
+            right_rear=1.125,
+        )
+
+        result = self.solver.refine(coarse, range_frame, Time(nanoseconds=0))
+
+        self.assertEqual(result.state, STATE_REFINED)
+        self.assertEqual(result.pose_source, "compensated_front_side_corner_solver")
+        self.assertAlmostEqual(result.x, 0.6, places=6)
+        self.assertAlmostEqual(result.y, 1.125, places=6)
+        self.assertAlmostEqual(result.yaw_deg, 0.0, places=6)
+        self.assertAlmostEqual(result.residual_m, 0.0, places=6)
+        special_debug = result.debug["solver_debug"]["special_solver_debug"]
+        self.assertAlmostEqual(
+            special_debug["corrected_side_front_range_m"], 1.125, places=6
+        )
+        self.assertTrue(special_debug["theta_converged"])
 
 
 if __name__ == "__main__":

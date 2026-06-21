@@ -94,6 +94,7 @@ class WallPair:
 class RegionMatch:
     name: str
     wall_pairs: List[WallPair]
+    region_config: Optional[Dict[str, Any]] = None
 
 
 @dataclass

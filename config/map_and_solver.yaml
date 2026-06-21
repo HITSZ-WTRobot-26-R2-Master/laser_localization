@@ -22,6 +22,7 @@ corner_pool:
   red_c00: [1.55, -0.125]    ## red矛头架远端
   red_c01: [0.0, -0.125]    ## red矛头架贴场地最边缘
   red_c02: [0.0, -2.0]    ## red_r2启动区处边缘点
+  red_special_axis_origin: [0.0, 0.0]
 
   red_c03: [2.0, 0.0]
   red_c04: [3.2, 0.0]
@@ -55,6 +56,7 @@ corner_pool:
   blue_c00: [1.55, 0.125]    ## blue矛头架远端
   blue_c01: [0.0, 0.125]    ## blue矛头架贴场地最边缘
   blue_c02: [0.0, 2.0]    ## blue_r2启动区处边缘点
+  blue_special_axis_origin: [0.0, 0.0]
 
   blue_c03: [2.0, 0.0]
   blue_c04: [3.2, 0.0]
@@ -92,6 +94,14 @@ wall_pool:
   red_edge_wall:
     from: red_c01
     to: red_c02
+    enabled: true
+  red_special_side_horizontal:
+    from: red_special_axis_origin
+    to: red_c04
+    enabled: true
+  red_special_front_vertical:
+    from: red_c04
+    to: red_forest03_rightbottom
     enabled: true
   red_forest_front_left:
     from: red_c04
@@ -187,6 +197,14 @@ wall_pool:
   blue_edge_wall:
     from: blue_c01
     to: blue_c02
+    enabled: true
+  blue_special_side_horizontal:
+    from: blue_special_axis_origin
+    to: blue_c04
+    enabled: true
+  blue_special_front_vertical:
+    from: blue_c04
+    to: blue_forest03_leftbottom
     enabled: true
   blue_forest_front_right:
     from: blue_c04
@@ -287,6 +305,18 @@ wall_pair_candidates:
       x: 0.0
       y: -0.125
       yaw_deg: -90.0
+
+  red_special_front_compensated:
+    x_wall:
+      wall: red_special_front_vertical
+      role: front
+    side_wall:
+      wall: red_special_side_horizontal
+      role: left
+    corner_world_pose:
+      x: 3.2
+      y: 0.0
+      yaw_deg: 0.0
 
   red_forest_frontleft:
     x_wall:
@@ -542,6 +572,18 @@ wall_pair_candidates:
       y: 0.125
       yaw_deg: 90.0
 
+  blue_special_front_compensated:
+    x_wall:
+      wall: blue_special_front_vertical
+      role: front
+    side_wall:
+      wall: blue_special_side_horizontal
+      role: right
+    corner_world_pose:
+      x: 3.2
+      y: 0.0
+      yaw_deg: 0.0
+
   blue_forest_frontleft:
     x_wall:
       wall: blue_forest_front_left
@@ -795,6 +837,18 @@ scene_profiles:
       regions:
         ## Special-case region support:
         ## use active_wall_pairs: [pair_a, pair_b] to run two solvers and publish only the selected result
+        - name: red_special_front_compensated_region
+          x_range: [0.0, 0.8]
+          y_range: [-1.8, -1.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_special_front_compensated
+          special_solver:
+            type: compensated_front_side
+            compensation_x0_m: 0.125
+            max_iterations: 8
+            theta_tolerance_deg: 0.01
+          priority: 200
+
         - name: red_spear_region_yaw-90
           x_range: [0.36, 1.4]       ## 距离矛头架两侧边缘10mm
           y_range: [-1.4, -0.125]
@@ -954,6 +1008,18 @@ scene_profiles:
       regions:
         ## Special-case region support:
         ## use active_wall_pairs: [pair_a, pair_b] to run two solvers and publish only the selected result
+        - name: blue_special_front_compensated_region
+          x_range: [0.0, 0.8]
+          y_range: [1.0, 1.8]
+          yaw_deg: 0.0
+          active_wall_pair: blue_special_front_compensated
+          special_solver:
+            type: compensated_front_side
+            compensation_x0_m: 0.125
+            max_iterations: 8
+            theta_tolerance_deg: 0.01
+          priority: 200
+
         - name: blue_spear_region_yaw90
           x_range: [0.36, 1.4]       ## 距离矛头架两侧边缘10mm
           y_range: [0.125, 1.4]

@@ -110,6 +110,20 @@ class PoseSolveLayer:
             )
 
         solver_cfg = scene_cfg.get("solver", {})
+        region_cfg = region_match.region_config or {}
+        special_solver_cfg = region_cfg.get("special_solver")
+        if isinstance(special_solver_cfg, dict):
+            return self._solve_compensated_front_side_region(
+                coarse=coarse,
+                range_frame=range_frame,
+                wall_pair=region_match.wall_pairs[0],
+                solver_cfg=solver_cfg,
+                special_solver_cfg=special_solver_cfg,
+                prior_age_ms=prior_age_ms,
+                region_name=region_match.name,
+                usable_sensor_count=usable_sensor_count,
+                debug=debug_payload,
+            )
         if len(region_match.wall_pairs) == 1:
             return self._solve_closed_form(
                 coarse=coarse,
@@ -327,6 +341,52 @@ class PoseSolveLayer:
                             f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
                             "max_lidar_distance_to_center_m must be >= 0"
                         )
+                special_solver_cfg = region.get("special_solver")
+                if special_solver_cfg is not None:
+                    if not isinstance(special_solver_cfg, dict):
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            "special_solver must be a mapping"
+                        )
+                    solver_type = str(special_solver_cfg.get("type", ""))
+                    if solver_type != "compensated_front_side":
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            "special_solver.type must be compensated_front_side"
+                        )
+                    if len(pair_names) != 1:
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            "special_solver requires exactly one active_wall_pair"
+                        )
+                    wall_pair = self.wall_pairs[pair_names[0]]
+                    if wall_pair.x_wall_role != "front":
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            "special_solver requires x_wall.role=front"
+                        )
+                    compensation_x0_m = float(
+                        special_solver_cfg.get("compensation_x0_m", 0.125)
+                    )
+                    if compensation_x0_m <= 0.0:
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            "special_solver.compensation_x0_m must be > 0"
+                        )
+                    max_iterations = int(special_solver_cfg.get("max_iterations", 8))
+                    if max_iterations <= 0:
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            "special_solver.max_iterations must be > 0"
+                        )
+                    theta_tolerance_deg = float(
+                        special_solver_cfg.get("theta_tolerance_deg", 0.01)
+                    )
+                    if theta_tolerance_deg <= 0.0:
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            "special_solver.theta_tolerance_deg must be > 0"
+                        )
 
     def _region_wall_pair_names(self, region: Dict[str, Any]) -> List[str]:
         if "active_wall_pair" in region:
@@ -340,6 +400,17 @@ class PoseSolveLayer:
                 return []
             return [str(pair_name) for pair_name in pair_names]
         return []
+
+    def _special_solver_type(self, region: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not isinstance(region, dict):
+            return None
+        special_solver_cfg = region.get("special_solver")
+        if not isinstance(special_solver_cfg, dict):
+            return None
+        solver_type = special_solver_cfg.get("type")
+        if solver_type is None:
+            return None
+        return str(solver_type)
 
     def _is_finite_pose(self, coarse: CoarsePose) -> bool:
         return (
@@ -442,12 +513,14 @@ class PoseSolveLayer:
         return RegionMatch(
             name=matched_region_name,
             wall_pairs=wall_pairs,
+            region_config=best_region,
         ), {
             "evaluated": True,
             "matched": bool(wall_pairs),
             "matched_region_name": matched_region_name,
             "matched_wall_pair_name": pair_names[0] if len(pair_names) == 1 else None,
             "matched_wall_pair_names": pair_names,
+            "matched_special_solver_type": self._special_solver_type(best_region),
             "candidate_count": len(candidate_debug),
             "candidates": candidate_debug,
         }
@@ -474,6 +547,7 @@ class PoseSolveLayer:
             "expected_yaw_deg": (
                 float(region["yaw_deg"]) if "yaw_deg" in region else None
             ),
+            "special_solver_type": self._special_solver_type(region),
             "yaw_tolerance_deg": (
                 float(region.get("yaw_tolerance_deg", default_yaw_tolerance_deg))
                 if "yaw_deg" in region
@@ -1341,6 +1415,404 @@ class PoseSolveLayer:
             yaw_in_corner_deg=yaw_corner_deg,
         )
 
+    def _solve_compensated_front_side_region(
+        self,
+        coarse: CoarsePose,
+        range_frame: RangeFrame,
+        wall_pair: WallPair,
+        solver_cfg: Dict[str, Any],
+        special_solver_cfg: Dict[str, Any],
+        prior_age_ms: float,
+        region_name: Optional[str] = None,
+        usable_sensor_count: int = 0,
+        debug: Optional[Dict[str, Any]] = None,
+    ) -> SolveResult:
+        beam_selection = self._select_beam_set_for_wall_pair(wall_pair, coarse.yaw_deg)
+        selected_beams = beam_selection.required_beams()
+        selected_beam_count = len(selected_beams)
+        selected_valid_beam_count = sum(
+            1 for name in selected_beams if range_frame.valid.get(name, False)
+        )
+        min_valid_corner_beams = int(solver_cfg.get("min_valid_corner_beams", 3))
+        compensation_x0_m = float(special_solver_cfg.get("compensation_x0_m", 0.125))
+        max_iterations = int(special_solver_cfg.get("max_iterations", 8))
+        theta_tolerance_deg = float(
+            special_solver_cfg.get("theta_tolerance_deg", 0.01)
+        )
+
+        debug = self._with_solver_debug(debug, beam_selection=beam_selection)
+        debug = self._with_special_solver_debug(
+            debug,
+            solver_type="compensated_front_side",
+            compensation_x0_m=compensation_x0_m,
+            max_iterations=max_iterations,
+            theta_tolerance_deg=theta_tolerance_deg,
+            theta_seed_deg=beam_selection.yaw_in_corner_deg,
+        )
+        if selected_valid_beam_count < min_valid_corner_beams:
+            return self._make_coarse_result(
+                coarse,
+                reason="INSUFFICIENT_VALID_BEAMS",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=debug,
+                wall_pair_name=wall_pair.name,
+                region_name=region_name,
+                beam_mode=beam_selection.beam_mode,
+                selected_beams=selected_beams,
+                yaw_in_corner_deg=beam_selection.yaw_in_corner_deg,
+            )
+        if beam_selection.x_beam_role != "front":
+            debug = self._with_special_solver_debug(
+                debug,
+                failure_reason="SPECIAL_SOLVER_REQUIRES_FRONT_X_BEAM",
+            )
+            return self._make_coarse_result(
+                coarse,
+                reason="SPECIAL_SOLVER_CONFIGURATION_ERROR",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=debug,
+                wall_pair_name=wall_pair.name,
+                region_name=region_name,
+                beam_mode=beam_selection.beam_mode,
+                selected_beams=selected_beams,
+                yaw_in_corner_deg=beam_selection.yaw_in_corner_deg,
+            )
+
+        front_range = range_frame.ranges[beam_selection.x_beam]
+        side_front_range = range_frame.ranges[beam_selection.side_front_beam]
+        side_rear_range = range_frame.ranges[beam_selection.side_rear_beam]
+        debug = self._with_special_solver_debug(
+            debug,
+            front_range_m=front_range,
+            side_front_range_m=side_front_range,
+            side_rear_range_m=side_rear_range,
+            pair_spacing_m=beam_selection.pair_spacing_m,
+            side_beam_role=beam_selection.side_beam_role,
+        )
+        (
+            theta_side_deg,
+            corrected_side_front_range,
+            theta_iterations,
+            theta_converged,
+            theta_failure_reason,
+        ) = self._iterate_compensated_theta(
+            side_beam_role=beam_selection.side_beam_role,
+            side_front_range=side_front_range,
+            side_rear_range=side_rear_range,
+            pair_spacing_m=beam_selection.pair_spacing_m,
+            compensation_x0_m=compensation_x0_m,
+            theta_seed_deg=beam_selection.yaw_in_corner_deg,
+            max_iterations=max_iterations,
+            theta_tolerance_deg=theta_tolerance_deg,
+        )
+        debug = self._with_special_solver_debug(
+            debug,
+            theta_iterations=theta_iterations,
+            theta_converged=theta_converged,
+            corrected_side_front_range_m=corrected_side_front_range,
+            failure_reason=theta_failure_reason,
+        )
+        if theta_side_deg is None or corrected_side_front_range is None:
+            return self._make_coarse_result(
+                coarse,
+                reason="SPECIAL_SOLVER_THETA_FAILED",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=debug,
+                wall_pair_name=wall_pair.name,
+                region_name=region_name,
+                beam_mode=beam_selection.beam_mode,
+                selected_beams=selected_beams,
+                yaw_in_corner_deg=beam_selection.yaw_in_corner_deg,
+            )
+
+        max_theta_abs_deg = float(solver_cfg.get("max_theta_abs_deg", 45.0))
+        debug = self._with_solver_debug(
+            debug,
+            beam_selection=beam_selection,
+            theta_side_deg=theta_side_deg,
+        )
+        if abs(theta_side_deg) > max_theta_abs_deg:
+            return self._make_coarse_result(
+                coarse,
+                reason="THETA_EXCEEDS_LIMIT",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=debug,
+                wall_pair_name=wall_pair.name,
+                region_name=region_name,
+                beam_mode=beam_selection.beam_mode,
+                selected_beams=selected_beams,
+                yaw_in_corner_deg=beam_selection.yaw_in_corner_deg,
+            )
+
+        c = math.cos(math.radians(theta_side_deg))
+        if abs(c) <= 1e-6:
+            debug = self._with_special_solver_debug(
+                debug,
+                failure_reason="THETA_COMPENSATION_SINGULAR",
+            )
+            return self._make_coarse_result(
+                coarse,
+                reason="SPECIAL_SOLVER_THETA_FAILED",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=debug,
+                wall_pair_name=wall_pair.name,
+                region_name=region_name,
+                beam_mode=beam_selection.beam_mode,
+                selected_beams=selected_beams,
+                yaw_in_corner_deg=beam_selection.yaw_in_corner_deg,
+            )
+
+        sx = -1.0
+        sy = 1.0 if beam_selection.side_beam_role == "right" else -1.0
+        d_x = beam_selection.x_offset_m
+        d_y = beam_selection.side_offset_m
+
+        x_corner = sx * (front_range + d_x) * c
+        y_corner = sy * (d_y + 0.5 * (corrected_side_front_range + side_rear_range)) * c
+        yaw_corner_deg = theta_side_deg
+
+        x_map, y_map, yaw_map_deg = transform_pose_2d(
+            wall_pair.corner_x,
+            wall_pair.corner_y,
+            wall_pair.corner_yaw_deg,
+            x_corner,
+            y_corner,
+            yaw_corner_deg,
+        )
+
+        max_correction_xy_m = float(solver_cfg.get("max_correction_xy_m", 0.15))
+        max_correction_yaw_deg = float(solver_cfg.get("max_correction_yaw_deg", 10.0))
+        delta_x = x_map - coarse.x
+        delta_y = y_map - coarse.y
+        delta_yaw_deg = wrap_deg(yaw_map_deg - coarse.yaw_deg)
+        delta_xy_norm_m = math.hypot(delta_x, delta_y)
+        debug = self._with_solver_debug(
+            debug,
+            beam_selection=beam_selection,
+            theta_side_deg=theta_side_deg,
+            corner_pose={
+                "x": x_corner,
+                "y": y_corner,
+                "yaw_deg": yaw_corner_deg,
+            },
+            corner_world_pose={
+                "x": wall_pair.corner_x,
+                "y": wall_pair.corner_y,
+                "yaw_deg": wall_pair.corner_yaw_deg,
+            },
+            candidate_pose={
+                "x": x_map,
+                "y": y_map,
+                "yaw_deg": yaw_map_deg,
+            },
+            correction_debug={
+                "delta_x_m": delta_x,
+                "delta_y_m": delta_y,
+                "delta_xy_norm_m": delta_xy_norm_m,
+                "delta_yaw_deg": delta_yaw_deg,
+                "max_correction_xy_m": max_correction_xy_m,
+                "max_correction_yaw_deg": max_correction_yaw_deg,
+            },
+        )
+
+        residual_m, target_hits = self._evaluate_solution(
+            pose_x=x_map,
+            pose_y=y_map,
+            pose_yaw_deg=yaw_map_deg,
+            range_frame=range_frame,
+            wall_pair=wall_pair,
+            beam_selection=beam_selection,
+            solver_cfg=solver_cfg,
+            measured_range_overrides={
+                beam_selection.side_front_beam: corrected_side_front_range
+            },
+        )
+        debug = self._with_solver_debug(
+            debug,
+            beam_selection=beam_selection,
+            theta_side_deg=theta_side_deg,
+            corner_pose={
+                "x": x_corner,
+                "y": y_corner,
+                "yaw_deg": yaw_corner_deg,
+            },
+            corner_world_pose={
+                "x": wall_pair.corner_x,
+                "y": wall_pair.corner_y,
+                "yaw_deg": wall_pair.corner_yaw_deg,
+            },
+            candidate_pose={
+                "x": x_map,
+                "y": y_map,
+                "yaw_deg": yaw_map_deg,
+            },
+            correction_debug={
+                "delta_x_m": delta_x,
+                "delta_y_m": delta_y,
+                "delta_xy_norm_m": delta_xy_norm_m,
+                "delta_yaw_deg": delta_yaw_deg,
+                "max_correction_xy_m": max_correction_xy_m,
+                "max_correction_yaw_deg": max_correction_yaw_deg,
+            },
+            residual_debug={
+                "mean_residual_m": residual_m,
+                "target_hit_count": target_hits,
+            },
+        )
+        residual_thresh_m = float(solver_cfg.get("residual_thresh_m", 0.03))
+        score = max(0.0, 1.0 - residual_m / max(residual_thresh_m, 1e-6))
+        debug = self._with_solver_debug(
+            debug,
+            beam_selection=beam_selection,
+            theta_side_deg=theta_side_deg,
+            residual_debug={
+                "mean_residual_m": residual_m,
+                "target_hit_count": target_hits,
+                "residual_thresh_m": residual_thresh_m,
+                "min_valid_corner_beams": float(min_valid_corner_beams),
+                "validation_gates_block_pose": 0.0,
+                "would_fail_target_hit_gate": (
+                    1.0 if target_hits < min_valid_corner_beams else 0.0
+                ),
+                "would_fail_residual_gate": (
+                    1.0 if residual_m > residual_thresh_m else 0.0
+                ),
+            },
+        )
+        debug = self._with_special_solver_debug(
+            debug,
+            corrected_side_front_range_m=corrected_side_front_range,
+        )
+
+        return self._make_result(
+            state=STATE_REFINED,
+            reason="OK",
+            pose_source="compensated_front_side_corner_solver",
+            localized=True,
+            x=x_map,
+            y=y_map,
+            yaw_deg=yaw_map_deg,
+            valid_beam_count=selected_valid_beam_count,
+            score=score,
+            prior_age_ms=prior_age_ms,
+            usable_sensor_count=usable_sensor_count,
+            selected_beam_count=selected_beam_count,
+            selected_valid_beam_count=selected_valid_beam_count,
+            target_hit_count=target_hits,
+            debug=debug,
+            residual_m=residual_m,
+            wall_pair_name=wall_pair.name,
+            region_name=region_name,
+            beam_mode=beam_selection.beam_mode,
+            selected_beams=selected_beams,
+            yaw_in_corner_deg=yaw_corner_deg,
+        )
+
+    def _iterate_compensated_theta(
+        self,
+        *,
+        side_beam_role: str,
+        side_front_range: float,
+        side_rear_range: float,
+        pair_spacing_m: float,
+        compensation_x0_m: float,
+        theta_seed_deg: float,
+        max_iterations: int,
+        theta_tolerance_deg: float,
+    ) -> Tuple[Optional[float], Optional[float], int, bool, Optional[str]]:
+        if side_beam_role not in {"left", "right"}:
+            return None, None, 0, False, "UNSUPPORTED_SIDE_BEAM_ROLE"
+        if not math.isfinite(float(side_front_range)) or not math.isfinite(
+            float(side_rear_range)
+        ):
+            return None, None, 0, False, "SIDE_RANGE_NON_FINITE"
+        theta_deg = float(theta_seed_deg)
+        corrected_side_front_range: Optional[float] = None
+        converged = False
+        iterations_used = 0
+        for iteration in range(1, max_iterations + 1):
+            iterations_used = iteration
+            cos_theta = math.cos(math.radians(theta_deg))
+            if abs(cos_theta) <= 1e-6:
+                return None, None, iteration - 1, False, "THETA_COMPENSATION_SINGULAR"
+            corrected_side_front_range = (
+                float(side_front_range) + compensation_x0_m / cos_theta
+            )
+            numerator = self._theta_numerator_for_side_beam(
+                side_beam_role=side_beam_role,
+                corrected_side_front_range=corrected_side_front_range,
+                side_rear_range=side_rear_range,
+            )
+            theta_next_deg = math.degrees(math.atan2(numerator, pair_spacing_m))
+            if not math.isfinite(theta_next_deg):
+                return None, None, iteration, False, "THETA_NON_FINITE"
+            if abs(theta_next_deg - theta_deg) <= theta_tolerance_deg:
+                theta_deg = theta_next_deg
+                converged = True
+                break
+            theta_deg = theta_next_deg
+        cos_theta = math.cos(math.radians(theta_deg))
+        if abs(cos_theta) <= 1e-6:
+            return (
+                None,
+                None,
+                iterations_used,
+                converged,
+                "THETA_COMPENSATION_SINGULAR",
+            )
+        corrected_side_front_range = float(side_front_range) + compensation_x0_m / cos_theta
+        return theta_deg, corrected_side_front_range, iterations_used, converged, None
+
+    def _theta_numerator_for_side_beam(
+        self,
+        *,
+        side_beam_role: str,
+        corrected_side_front_range: float,
+        side_rear_range: float,
+    ) -> float:
+        if side_beam_role == "left":
+            return float(side_rear_range) - float(corrected_side_front_range)
+        return float(corrected_side_front_range) - float(side_rear_range)
+
+    def _with_special_solver_debug(
+        self,
+        debug: Optional[Dict[str, Any]],
+        **fields: Any,
+    ) -> Dict[str, Any]:
+        merged = dict(debug or {})
+        solver_debug = dict(merged.get("solver_debug", {}))
+        special_solver_debug = dict(solver_debug.get("special_solver_debug", {}))
+        for key, value in fields.items():
+            if isinstance(value, bool) or value is None or isinstance(value, str):
+                special_solver_debug[key] = value
+            elif isinstance(value, int):
+                special_solver_debug[key] = int(value)
+            else:
+                special_solver_debug[key] = self._debug_float(float(value))
+        solver_debug["special_solver_debug"] = special_solver_debug
+        merged["solver_debug"] = solver_debug
+        return merged
+
     def _count_usable_sensors(self, range_frame: RangeFrame) -> int:
         return sum(1 for name in SENSOR_ORDER if range_frame.valid.get(name, False))
 
@@ -1444,6 +1916,7 @@ class PoseSolveLayer:
         wall_pair: WallPair,
         beam_selection: BeamSelection,
         solver_cfg: Dict[str, Any],
+        measured_range_overrides: Optional[Dict[str, float]] = None,
     ) -> Tuple[float, int]:
         wall_hit_tolerance_m = float(solver_cfg.get("wall_hit_tolerance_m", 0.05))
         wall_extent_margin_m = float(solver_cfg.get("wall_extent_margin_m", 0.08))
@@ -1459,12 +1932,18 @@ class PoseSolveLayer:
         residuals: List[float] = []
         target_hits = 0
         for beam_name, target_wall, _other_wall in checks:
+            measured_range = (
+                measured_range_overrides[beam_name]
+                if measured_range_overrides is not None
+                and beam_name in measured_range_overrides
+                else range_frame.ranges[beam_name]
+            )
             hit_x, hit_y = self._beam_hit_point(
                 pose_x=pose_x,
                 pose_y=pose_y,
                 pose_yaw_deg=pose_yaw_deg,
                 sensor_name=beam_name,
-                measured_range=range_frame.ranges[beam_name],
+                measured_range=measured_range,
             )
             target_distance, target_in_extent = self._point_to_wall_distance(
                 hit_x,
