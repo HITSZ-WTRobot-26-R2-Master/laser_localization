@@ -140,6 +140,51 @@ class TestDualWallPairRegionSupport(unittest.TestCase):
 
         self.solver._validate_scene_profiles(scene_profiles)
 
+    def test_validate_scene_profiles_accepts_projected_xy_special_solver_region(
+        self,
+    ) -> None:
+        scene_profiles = {
+            "scene": {
+                "wall_selector": {
+                    "regions": [
+                        {
+                            "name": "special_region",
+                            "x_range": [1.0, 2.0],
+                            "y_range": [3.0, 4.0],
+                            "active_wall_pair": "pair_a",
+                            "special_solver": {
+                                "type": "projected_xy_with_lidar_yaw",
+                                "solve_axes": ["x", "y"],
+                                "x_beam": "right_front",
+                                "y_beam": "rear_center",
+                                "min_dir_component_abs": 0.2,
+                                "max_x_correction_m": 0.2,
+                                "max_y_correction_m": 0.2,
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+        self.solver.walls = {
+            "x_wall": WallSegment(
+                name="x_wall",
+                orientation="horizontal",
+                const_value=1.2,
+                min_axis=0.0,
+                max_axis=3.2,
+            ),
+            "side_wall": WallSegment(
+                name="side_wall",
+                orientation="vertical",
+                const_value=3.2,
+                min_axis=-2.0,
+                max_axis=1.2,
+            ),
+        }
+
+        self.solver._validate_scene_profiles(scene_profiles)
+
     def test_select_region_match_returns_both_wall_pairs(self) -> None:
         coarse = CoarsePose(
             stamp=Time(nanoseconds=0),
@@ -374,6 +419,20 @@ class TestCompensatedFrontSideSolver(unittest.TestCase):
                 min_axis=0.0,
                 max_axis=3.2,
             ),
+            "projected_local_front_horizontal": WallSegment(
+                name="projected_local_front_horizontal",
+                orientation="horizontal",
+                const_value=0.0,
+                min_axis=0.0,
+                max_axis=3.2,
+            ),
+            "projected_local_side_vertical": WallSegment(
+                name="projected_local_side_vertical",
+                orientation="vertical",
+                const_value=3.2,
+                min_axis=-2.4,
+                max_axis=0.0,
+            ),
         }
         self.solver.wall_pairs = {
             "red_special_front_compensated": WallPair(
@@ -395,6 +454,16 @@ class TestCompensatedFrontSideSolver(unittest.TestCase):
                 corner_x=3.2,
                 corner_y=0.0,
                 corner_yaw_deg=0.0,
+            ),
+            "projected_local_rotated_pair": WallPair(
+                name="projected_local_rotated_pair",
+                x_wall_name="projected_local_front_horizontal",
+                x_wall_role="front",
+                side_wall_name="projected_local_side_vertical",
+                side_wall_role="right",
+                corner_x=3.2,
+                corner_y=0.0,
+                corner_yaw_deg=90.0,
             ),
         }
 
@@ -523,6 +592,128 @@ class TestCompensatedFrontSideSolver(unittest.TestCase):
             special_debug["corrected_side_front_range_m"], 1.125, places=6
         )
         self.assertTrue(special_debug["theta_converged"])
+
+    def test_refine_uses_projected_xy_solver_for_red_region(self) -> None:
+        self.solver.active_scene = "mode_red"
+        self.solver.scene_profiles = {
+            "mode_red": {
+                "wall_selector": {
+                    "yaw_tolerance_deg": 10.0,
+                    "regions": [
+                        {
+                            "name": "rotated_projected_xy_region",
+                            "x_range": [2.4, 2.8],
+                            "y_range": [-1.4, -1.0],
+                            "yaw_deg": 90.0,
+                            "active_wall_pair": "projected_local_rotated_pair",
+                            "special_solver": {
+                                "type": "projected_xy_with_lidar_yaw",
+                                "solve_axes": ["x", "y"],
+                                "x_beam": "front_center",
+                                "y_beam": "right_front",
+                                "min_dir_component_abs": 0.2,
+                                "max_x_correction_m": 0.2,
+                                "max_y_correction_m": 0.2,
+                            },
+                            "priority": 200,
+                        }
+                    ],
+                },
+                "solver": {
+                    "min_valid_corner_beams": 3,
+                    "max_theta_abs_deg": 45.0,
+                    "wall_hit_tolerance_m": 1e-6,
+                    "wall_extent_margin_m": 1e-6,
+                    "max_correction_xy_m": 0.15,
+                    "max_correction_yaw_deg": 10.0,
+                    "residual_thresh_m": 0.03,
+                },
+            }
+        }
+        coarse = CoarsePose(
+            stamp=Time(nanoseconds=0),
+            x=2.6,
+            y=-1.125,
+            z=0.0,
+            roll_rad=0.0,
+            pitch_rad=0.0,
+            yaw_deg=90.0,
+        )
+        range_frame = self._make_range_frame(
+            front_center=1.125,
+            right_front=0.6,
+        )
+
+        result = self.solver.refine(coarse, range_frame, Time(nanoseconds=0))
+
+        self.assertEqual(result.state, STATE_REFINED)
+        self.assertEqual(result.pose_source, "projected_xy_with_lidar_yaw")
+        self.assertAlmostEqual(result.x, 2.6, places=6)
+        self.assertAlmostEqual(result.y, -1.125, places=6)
+        self.assertAlmostEqual(result.yaw_deg, 90.0, places=6)
+        self.assertAlmostEqual(result.residual_m, 0.0, places=6)
+        self.assertEqual(result.selected_beams, ["front_center", "right_front"])
+        special_debug = result.debug["solver_debug"]["special_solver_debug"]
+        self.assertEqual(special_debug["solver_type"], "projected_xy_with_lidar_yaw")
+        self.assertEqual(special_debug["x_solver"]["beam_name"], "front_center")
+        self.assertEqual(special_debug["y_solver"]["beam_name"], "right_front")
+
+    def test_refine_projected_xy_solver_rejects_large_correction(self) -> None:
+        self.solver.active_scene = "mode_red"
+        self.solver.scene_profiles = {
+            "mode_red": {
+                "wall_selector": {
+                    "yaw_tolerance_deg": 10.0,
+                    "regions": [
+                        {
+                            "name": "rotated_projected_y_region",
+                            "x_range": [2.2, 2.6],
+                            "y_range": [-1.4, -1.0],
+                            "yaw_deg": 90.0,
+                            "active_wall_pair": "projected_local_rotated_pair",
+                            "special_solver": {
+                                "type": "projected_xy_with_lidar_yaw",
+                                "solve_axes": ["y"],
+                                "y_beam": "right_front",
+                                "min_dir_component_abs": 0.2,
+                                "max_y_correction_m": 0.2,
+                            },
+                            "priority": 200,
+                        }
+                    ],
+                },
+                "solver": {
+                    "min_valid_corner_beams": 3,
+                    "max_theta_abs_deg": 45.0,
+                    "wall_hit_tolerance_m": 1e-6,
+                    "wall_extent_margin_m": 1e-6,
+                    "max_correction_xy_m": 0.15,
+                    "max_correction_yaw_deg": 10.0,
+                    "residual_thresh_m": 0.03,
+                },
+            }
+        }
+        coarse = CoarsePose(
+            stamp=Time(nanoseconds=0),
+            x=2.3,
+            y=-1.125,
+            z=0.0,
+            roll_rad=0.0,
+            pitch_rad=0.0,
+            yaw_deg=90.0,
+        )
+        range_frame = self._make_range_frame(right_front=0.6)
+
+        result = self.solver.refine(coarse, range_frame, Time(nanoseconds=0))
+
+        self.assertEqual(result.state, STATE_COARSE_ONLY)
+        self.assertEqual(result.reason, "PROJECTED_AXIS_CORRECTION_EXCEEDS_LIMIT")
+        self.assertAlmostEqual(result.x, 2.3, places=6)
+        special_debug = result.debug["solver_debug"]["special_solver_debug"]
+        self.assertEqual(
+            special_debug["failure_reason"],
+            "PROJECTED_Y_CORRECTION_EXCEEDS_LIMIT",
+        )
 
 
 if __name__ == "__main__":

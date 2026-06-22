@@ -26,8 +26,7 @@ from .common import (
     wrap_deg,
 )
 
-PROJECTED_X_BEAMS = {"front_center", "rear_center"}
-PROJECTED_Y_BEAMS = {"left_front", "left_rear", "right_front", "right_rear"}
+PROJECTED_ALLOWED_BEAMS = set(SENSOR_ORDER)
 
 
 class PoseSolveLayer:
@@ -437,18 +436,14 @@ class PoseSolveLayer:
                                 f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
                                 "special_solver.min_dir_component_abs must be in (0, 1]"
                             )
+                        x_beam: Optional[str] = None
+                        y_beam: Optional[str] = None
                         if "x" in solve_axes:
                             x_beam = str(special_solver_cfg.get("x_beam", ""))
-                            if x_beam not in PROJECTED_X_BEAMS:
+                            if x_beam not in PROJECTED_ALLOWED_BEAMS:
                                 raise RuntimeError(
                                     f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                                    "special_solver.x_beam must be front_center or rear_center"
-                                )
-                            x_wall = self.walls[wall_pair.x_wall_name]
-                            if x_wall.orientation != "vertical":
-                                raise RuntimeError(
-                                    f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                                    "special_solver solve_axes=[x] requires a vertical x_wall"
+                                    f"special_solver.x_beam must be one of {SENSOR_ORDER}"
                                 )
                             max_x_correction_m = float(
                                 special_solver_cfg.get("max_x_correction_m", 0.15)
@@ -460,16 +455,10 @@ class PoseSolveLayer:
                                 )
                         if "y" in solve_axes:
                             y_beam = str(special_solver_cfg.get("y_beam", ""))
-                            if y_beam not in PROJECTED_Y_BEAMS:
+                            if y_beam not in PROJECTED_ALLOWED_BEAMS:
                                 raise RuntimeError(
                                     f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                                    "special_solver.y_beam must be one of left_front, left_rear, right_front, right_rear"
-                                )
-                            side_wall = self.walls[wall_pair.side_wall_name]
-                            if side_wall.orientation != "horizontal":
-                                raise RuntimeError(
-                                    f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                                    "special_solver solve_axes=[y] requires a horizontal side_wall"
+                                    f"special_solver.y_beam must be one of {SENSOR_ORDER}"
                                 )
                             max_y_correction_m = float(
                                 special_solver_cfg.get("max_y_correction_m", 0.15)
@@ -479,6 +468,11 @@ class PoseSolveLayer:
                                     f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
                                     "special_solver.max_y_correction_m must be >= 0"
                                 )
+                        if x_beam is not None and y_beam is not None and x_beam == y_beam:
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver.x_beam and special_solver.y_beam must be different when solving both axes"
+                            )
 
     def _projected_xy_solve_axes(
         self, special_solver_cfg: Dict[str, Any]
@@ -1872,6 +1866,12 @@ class PoseSolveLayer:
             )
         )
         max_correction_yaw_deg = float(solver_cfg.get("max_correction_yaw_deg", 10.0))
+        coarse_corner_x, coarse_corner_y, yaw_corner_deg = self._world_pose_to_corner_local(
+            pose_x=coarse.x,
+            pose_y=coarse.y,
+            pose_yaw_deg=coarse.yaw_deg,
+            wall_pair=wall_pair,
+        )
 
         debug = self._with_special_solver_debug(
             debug,
@@ -1879,10 +1879,15 @@ class PoseSolveLayer:
             min_dir_component_abs=min_dir_component_abs,
             solve_x=1.0 if "x" in solve_axes else 0.0,
             solve_y=1.0 if "y" in solve_axes else 0.0,
+            x_wall_name=wall_pair.x_wall_name,
+            side_wall_name=wall_pair.side_wall_name,
+            x_wall_role=wall_pair.x_wall_role,
+            side_wall_role=wall_pair.side_wall_role,
+            yaw_in_corner_deg=yaw_corner_deg,
         )
 
-        x_map = coarse.x
-        y_map = coarse.y
+        x_corner = coarse_corner_x
+        y_corner = coarse_corner_y
         solve_debug: Dict[str, Any] = {}
 
         if "x" in solve_axes:
@@ -1904,11 +1909,13 @@ class PoseSolveLayer:
                     region_name=region_name,
                     beam_mode="projected_xy_with_lidar_yaw",
                     selected_beams=selected_beams,
+                    yaw_in_corner_deg=yaw_corner_deg,
                 )
-            x_value, x_debug = self._solve_projected_world_axis_from_beam(
+            x_value, x_debug = self._solve_projected_corner_axis_from_beam(
                 beam_name=x_beam,
-                wall=self.walls[wall_pair.x_wall_name],
-                pose_yaw_deg=coarse.yaw_deg,
+                target_wall_name=wall_pair.x_wall_name,
+                target_wall_role=wall_pair.x_wall_role,
+                pose_yaw_deg=yaw_corner_deg,
                 measured_range=range_frame.ranges[x_beam],
                 axis="x",
                 min_dir_component_abs=min_dir_component_abs,
@@ -1933,8 +1940,9 @@ class PoseSolveLayer:
                     region_name=region_name,
                     beam_mode="projected_xy_with_lidar_yaw",
                     selected_beams=selected_beams,
+                    yaw_in_corner_deg=yaw_corner_deg,
                 )
-            x_map = x_value
+            x_corner = x_value
 
         if "y" in solve_axes:
             if y_beam is None or not range_frame.valid.get(y_beam, False):
@@ -1956,11 +1964,13 @@ class PoseSolveLayer:
                     region_name=region_name,
                     beam_mode="projected_xy_with_lidar_yaw",
                     selected_beams=selected_beams,
+                    yaw_in_corner_deg=yaw_corner_deg,
                 )
-            y_value, y_debug = self._solve_projected_world_axis_from_beam(
+            y_value, y_debug = self._solve_projected_corner_axis_from_beam(
                 beam_name=y_beam,
-                wall=self.walls[wall_pair.side_wall_name],
-                pose_yaw_deg=coarse.yaw_deg,
+                target_wall_name=wall_pair.side_wall_name,
+                target_wall_role=wall_pair.side_wall_role,
+                pose_yaw_deg=yaw_corner_deg,
                 measured_range=range_frame.ranges[y_beam],
                 axis="y",
                 min_dir_component_abs=min_dir_component_abs,
@@ -1985,9 +1995,21 @@ class PoseSolveLayer:
                     region_name=region_name,
                     beam_mode="projected_xy_with_lidar_yaw",
                     selected_beams=selected_beams,
+                    yaw_in_corner_deg=yaw_corner_deg,
                 )
-            y_map = y_value
+            y_corner = y_value
 
+        x_map, y_map, yaw_map_deg = transform_pose_2d(
+            wall_pair.corner_x,
+            wall_pair.corner_y,
+            wall_pair.corner_yaw_deg,
+            x_corner,
+            y_corner,
+            yaw_corner_deg,
+        )
+        delta_local_x = x_corner - coarse_corner_x
+        delta_local_y = y_corner - coarse_corner_y
+        delta_local_xy_norm_m = math.hypot(delta_local_x, delta_local_y)
         delta_x = x_map - coarse.x
         delta_y = y_map - coarse.y
         delta_xy_norm_m = math.hypot(delta_x, delta_y)
@@ -1995,21 +2017,34 @@ class PoseSolveLayer:
         debug = self._merge_special_solver_debug_map(debug, solve_debug)
         debug = self._with_solver_debug(
             debug,
+            corner_pose={
+                "x": x_corner,
+                "y": y_corner,
+                "yaw_deg": yaw_corner_deg,
+            },
+            corner_world_pose={
+                "x": wall_pair.corner_x,
+                "y": wall_pair.corner_y,
+                "yaw_deg": wall_pair.corner_yaw_deg,
+            },
             candidate_pose={
                 "x": x_map,
                 "y": y_map,
-                "yaw_deg": coarse.yaw_deg,
+                "yaw_deg": yaw_map_deg,
             },
             correction_debug={
                 "delta_x_m": delta_x,
                 "delta_y_m": delta_y,
                 "delta_xy_norm_m": delta_xy_norm_m,
+                "delta_local_x_m": delta_local_x,
+                "delta_local_y_m": delta_local_y,
+                "delta_local_xy_norm_m": delta_local_xy_norm_m,
                 "delta_yaw_deg": delta_yaw_deg,
                 "max_correction_xy_m": max(max_x_correction_m, max_y_correction_m),
                 "max_correction_yaw_deg": max_correction_yaw_deg,
             },
         )
-        if "x" in solve_axes and abs(delta_x) > max_x_correction_m:
+        if "x" in solve_axes and abs(delta_local_x) > max_x_correction_m:
             debug = self._with_special_solver_debug(
                 debug,
                 failure_reason="PROJECTED_X_CORRECTION_EXCEEDS_LIMIT",
@@ -2028,8 +2063,9 @@ class PoseSolveLayer:
                 region_name=region_name,
                 beam_mode="projected_xy_with_lidar_yaw",
                 selected_beams=selected_beams,
+                yaw_in_corner_deg=yaw_corner_deg,
             )
-        if "y" in solve_axes and abs(delta_y) > max_y_correction_m:
+        if "y" in solve_axes and abs(delta_local_y) > max_y_correction_m:
             debug = self._with_special_solver_debug(
                 debug,
                 failure_reason="PROJECTED_Y_CORRECTION_EXCEEDS_LIMIT",
@@ -2048,12 +2084,13 @@ class PoseSolveLayer:
                 region_name=region_name,
                 beam_mode="projected_xy_with_lidar_yaw",
                 selected_beams=selected_beams,
+                yaw_in_corner_deg=yaw_corner_deg,
             )
 
         residual_m, target_hits = self._evaluate_projected_solution(
             pose_x=x_map,
             pose_y=y_map,
-            pose_yaw_deg=coarse.yaw_deg,
+            pose_yaw_deg=yaw_map_deg,
             range_frame=range_frame,
             wall_pair=wall_pair,
             x_beam=x_beam,
@@ -2083,7 +2120,7 @@ class PoseSolveLayer:
             localized=True,
             x=x_map,
             y=y_map,
-            yaw_deg=coarse.yaw_deg,
+            yaw_deg=yaw_map_deg,
             valid_beam_count=selected_valid_beam_count,
             score=score,
             prior_age_ms=prior_age_ms,
@@ -2097,6 +2134,7 @@ class PoseSolveLayer:
             region_name=region_name,
             beam_mode="projected_xy_with_lidar_yaw",
             selected_beams=selected_beams,
+            yaw_in_corner_deg=yaw_corner_deg,
         )
 
     def _iterate_compensated_theta(
@@ -2385,11 +2423,26 @@ class PoseSolveLayer:
         mean_residual = sum(residuals) / max(len(residuals), 1)
         return mean_residual, target_hits
 
-    def _solve_projected_world_axis_from_beam(
+    def _world_pose_to_corner_local(
+        self,
+        *,
+        pose_x: float,
+        pose_y: float,
+        pose_yaw_deg: float,
+        wall_pair: WallPair,
+    ) -> Tuple[float, float, float]:
+        world_dx = float(pose_x) - wall_pair.corner_x
+        world_dy = float(pose_y) - wall_pair.corner_y
+        local_x, local_y = rotate_2d(world_dx, world_dy, -wall_pair.corner_yaw_deg)
+        local_yaw_deg = wrap_deg(float(pose_yaw_deg) - wall_pair.corner_yaw_deg)
+        return local_x, local_y, local_yaw_deg
+
+    def _solve_projected_corner_axis_from_beam(
         self,
         *,
         beam_name: str,
-        wall: WallSegment,
+        target_wall_name: str,
+        target_wall_role: str,
         pose_yaw_deg: float,
         measured_range: float,
         axis: str,
@@ -2400,40 +2453,35 @@ class PoseSolveLayer:
         dir_dx, dir_dy = rotate_2d(mount.dir_x, mount.dir_y, pose_yaw_deg)
         beam_debug = {
             "beam_name": beam_name,
-            "wall_name": wall.name,
-            "wall_orientation": wall.orientation,
+            "target_wall_name": target_wall_name,
+            "target_wall_role": target_wall_role,
             "range_m": self._debug_float(float(measured_range)),
             "origin_dx_m": self._debug_float(origin_dx),
             "origin_dy_m": self._debug_float(origin_dy),
             "dir_dx": self._debug_float(dir_dx),
             "dir_dy": self._debug_float(dir_dy),
             "axis": axis,
+            "yaw_in_corner_deg": self._debug_float(pose_yaw_deg),
         }
         if not math.isfinite(float(measured_range)):
             beam_debug["failure_reason"] = "RANGE_NON_FINITE"
             return None, beam_debug
         if axis == "x":
-            if wall.orientation != "vertical":
-                beam_debug["failure_reason"] = "TARGET_WALL_NOT_VERTICAL"
-                return None, beam_debug
             if abs(dir_dx) < min_dir_component_abs:
                 beam_debug["failure_reason"] = "DIR_DX_TOO_SMALL"
                 beam_debug["dir_component_abs_min"] = self._debug_float(
                     min_dir_component_abs
                 )
                 return None, beam_debug
-            axis_value = float(wall.const_value) - origin_dx - float(measured_range) * dir_dx
+            axis_value = -(origin_dx + float(measured_range) * dir_dx)
         else:
-            if wall.orientation != "horizontal":
-                beam_debug["failure_reason"] = "TARGET_WALL_NOT_HORIZONTAL"
-                return None, beam_debug
             if abs(dir_dy) < min_dir_component_abs:
                 beam_debug["failure_reason"] = "DIR_DY_TOO_SMALL"
                 beam_debug["dir_component_abs_min"] = self._debug_float(
                     min_dir_component_abs
                 )
                 return None, beam_debug
-            axis_value = float(wall.const_value) - origin_dy - float(measured_range) * dir_dy
+            axis_value = -(origin_dy + float(measured_range) * dir_dy)
         beam_debug["axis_value"] = self._debug_float(axis_value)
         return axis_value, beam_debug
 
