@@ -1243,8 +1243,8 @@ scene_profiles:
           priority: 200
 
         - name: red_spear_region_yaw-90
-          x_range: [0.36, 1.5]       ## 距离矛头架两侧边缘10mm
-          y_range: [-1.4, -0.125]
+          x_range: [0.35, 1.55]       ## 距离矛头架两侧边缘10mm
+          y_range: [-3.0, -0.125]
           yaw_deg: -90.0
           active_wall_pair: red_spear_region_yaw-90
           priority: 100
