@@ -17,6 +17,15 @@ scene_manager:
   active_scene: mode_red   ## 红方
   allow_runtime_switch: false
 
+
+
+
+
+
+
+
+
+
 corner_pool:
 ##------------红方角点---------------##
   red_c00: [1.55, -0.125]    ## red矛头架远端
@@ -558,6 +567,113 @@ wall_pair_candidates:
       y: -3.6
       yaw_deg: -90.0
 
+  red_forest03_region_yaw0:
+    x_wall:
+      wall: red_forest03_top
+      role: front
+    side_wall:
+      wall: red_forest03_right
+      role: right
+    corner_world_pose:
+      x: 4.4
+      y: -2.4
+      yaw_deg: 0.0
+    
+  red_forest03_region_yaw90:
+    x_wall:
+      wall: red_forest03_right
+      role: rear
+    side_wall:
+      wall: red_forest03_top
+      role: right
+    corner_world_pose:
+      x: 4.4
+      y: -2.4
+      yaw_deg: 90.0
+
+  red_forest03_region_yaw-90:
+    x_wall:
+      wall: red_forest03_right
+      role: front
+    side_wall:
+      wall: red_forest03_top
+      role: left
+    corner_world_pose:
+      x: 4.4
+      y: -2.4
+      yaw_deg: -90.0
+    
+  red_forest07_region_yaw0:
+    x_wall:
+      wall: red_forest07_top
+      role: front
+    side_wall:
+      wall: red_forest08_right
+      role: left
+    corner_world_pose:
+      x: 6.8
+      y: -3.6
+      yaw_deg: 0.0
+
+  red_forest07_region_yaw90:
+    x_wall:
+      wall: red_forest08_right
+      role: front
+    side_wall:
+      wall: red_forest07_top
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: -3.6
+      yaw_deg: 90.0
+
+  red_forest07_region_yaw-90:
+    x_wall:
+      wall: red_forest08_right
+      role: rear
+    side_wall:
+      wall: red_forest07_top
+      role: left
+    corner_world_pose:
+      x: 6.8
+      y: -3.6
+      yaw_deg: -90.0
+
+  red_forest11_region_yaw0:
+    x_wall:
+      wall: red_forest08_top
+      role: rear
+    side_wall:
+      wall: red_forest11_right
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: -3.6
+      yaw_deg: 0.0
+  
+  red_forest11_region_yaw90:
+    x_wall:
+      wall: red_forest11_right
+      role: rear
+    side_wall:
+      wall: red_forest08_top
+      role: left
+    corner_world_pose:
+      x: 6.8
+      y: -3.6
+      yaw_deg: 90.0
+
+  red_forest11_region_yaw-90:
+    x_wall:
+      wall: red_forest11_right
+      role: front
+    side_wall:
+      wall: red_forest08_top
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: -3.6
+      yaw_deg: -90.0
 
 ##------------蓝色区域---------------##
   blue_spear_region_yaw90:
@@ -826,6 +942,13 @@ wall_pair_candidates:
       
 
 
+
+
+
+
+
+
+
 scene_profiles:
 ##------------红色---------------##
   mode_red:
@@ -835,8 +958,6 @@ scene_profiles:
     wall_selector:
       yaw_tolerance_deg: 10.0
       regions:
-        ## Special-case region support:
-        ## use active_wall_pairs: [pair_a, pair_b] to run two solvers and publish only the selected result
         - name: red_special_front_compensated_region
           x_range: [0.0, 0.8]
           y_range: [-1.8, -1.0]
@@ -988,7 +1109,129 @@ scene_profiles:
           yaw_deg: -90.0
           active_wall_pair: red_forest10_region_yaw-90
           priority: 100
-          
+
+        - name: red_forest03_region_yaw0
+          x_range: [3.6, 4.0]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest03_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: front_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        
+        - name: red_forest03_region_yaw90
+          x_range: [3.6, 4.0]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest03_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+        
+        - name: red_forest03_region_yaw-90
+          x_range: [3.6, 4.0]
+          y_range: [-2.0, -1.6]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest03_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: red_forest07_region_yaw0
+          x_range: [6.0, 6.4]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest07_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            x_beam: left_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: red_forest07_region_yaw90
+          x_range: [6.0, 6.4]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest07_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: front_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: red_forest07_region_yaw-90
+          x_range: [6.0, 6.4]
+          y_range: [-4.4, -4.0]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest07_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            y_beam: rear_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: red_forest11_region_yaw0
+          x_range: [7.2, 7.6]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest11_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            y_beam: rear_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: red_forest11_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest11_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: red_forest11_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [-3.2, -2.8]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest11_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+
+
+
+
     solver:
       min_valid_corner_beams: 3
       max_theta_abs_deg: 45.0

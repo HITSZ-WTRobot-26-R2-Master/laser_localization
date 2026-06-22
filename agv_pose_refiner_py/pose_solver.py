@@ -26,6 +26,9 @@ from .common import (
     wrap_deg,
 )
 
+PROJECTED_X_BEAMS = {"front_center", "rear_center"}
+PROJECTED_Y_BEAMS = {"left_front", "left_rear", "right_front", "right_rear"}
+
 
 class PoseSolveLayer:
     def __init__(
@@ -113,17 +116,32 @@ class PoseSolveLayer:
         region_cfg = region_match.region_config or {}
         special_solver_cfg = region_cfg.get("special_solver")
         if isinstance(special_solver_cfg, dict):
-            return self._solve_compensated_front_side_region(
-                coarse=coarse,
-                range_frame=range_frame,
-                wall_pair=region_match.wall_pairs[0],
-                solver_cfg=solver_cfg,
-                special_solver_cfg=special_solver_cfg,
-                prior_age_ms=prior_age_ms,
-                region_name=region_match.name,
-                usable_sensor_count=usable_sensor_count,
-                debug=debug_payload,
-            )
+            special_solver_type = str(special_solver_cfg.get("type", ""))
+            if special_solver_type == "compensated_front_side":
+                return self._solve_compensated_front_side_region(
+                    coarse=coarse,
+                    range_frame=range_frame,
+                    wall_pair=region_match.wall_pairs[0],
+                    solver_cfg=solver_cfg,
+                    special_solver_cfg=special_solver_cfg,
+                    prior_age_ms=prior_age_ms,
+                    region_name=region_match.name,
+                    usable_sensor_count=usable_sensor_count,
+                    debug=debug_payload,
+                )
+            if special_solver_type == "projected_xy_with_lidar_yaw":
+                return self._solve_projected_xy_with_lidar_yaw(
+                    coarse=coarse,
+                    range_frame=range_frame,
+                    wall_pair=region_match.wall_pairs[0],
+                    solver_cfg=solver_cfg,
+                    special_solver_cfg=special_solver_cfg,
+                    prior_age_ms=prior_age_ms,
+                    region_name=region_match.name,
+                    usable_sensor_count=usable_sensor_count,
+                    debug=debug_payload,
+                )
+            raise RuntimeError(f"Unsupported special_solver.type '{special_solver_type}'")
         if len(region_match.wall_pairs) == 1:
             return self._solve_closed_form(
                 coarse=coarse,
@@ -349,10 +367,13 @@ class PoseSolveLayer:
                             "special_solver must be a mapping"
                         )
                     solver_type = str(special_solver_cfg.get("type", ""))
-                    if solver_type != "compensated_front_side":
+                    if solver_type not in {
+                        "compensated_front_side",
+                        "projected_xy_with_lidar_yaw",
+                    }:
                         raise RuntimeError(
                             f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                            "special_solver.type must be compensated_front_side"
+                            "special_solver.type must be compensated_front_side or projected_xy_with_lidar_yaw"
                         )
                     if len(pair_names) != 1:
                         raise RuntimeError(
@@ -360,33 +381,112 @@ class PoseSolveLayer:
                             "special_solver requires exactly one active_wall_pair"
                         )
                     wall_pair = self.wall_pairs[pair_names[0]]
-                    if wall_pair.x_wall_role != "front":
-                        raise RuntimeError(
-                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                            "special_solver requires x_wall.role=front"
+                    if solver_type == "compensated_front_side":
+                        if wall_pair.x_wall_role != "front":
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver requires x_wall.role=front"
+                            )
+                        compensation_x0_m = float(
+                            special_solver_cfg.get("compensation_x0_m", 0.125)
                         )
-                    compensation_x0_m = float(
-                        special_solver_cfg.get("compensation_x0_m", 0.125)
-                    )
-                    if compensation_x0_m <= 0.0:
-                        raise RuntimeError(
-                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                            "special_solver.compensation_x0_m must be > 0"
+                        if compensation_x0_m <= 0.0:
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver.compensation_x0_m must be > 0"
+                            )
+                        max_iterations = int(special_solver_cfg.get("max_iterations", 8))
+                        if max_iterations <= 0:
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver.max_iterations must be > 0"
+                            )
+                        theta_tolerance_deg = float(
+                            special_solver_cfg.get("theta_tolerance_deg", 0.01)
                         )
-                    max_iterations = int(special_solver_cfg.get("max_iterations", 8))
-                    if max_iterations <= 0:
-                        raise RuntimeError(
-                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                            "special_solver.max_iterations must be > 0"
+                        if theta_tolerance_deg <= 0.0:
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver.theta_tolerance_deg must be > 0"
+                            )
+                    else:
+                        solve_axes = self._projected_xy_solve_axes(special_solver_cfg)
+                        if not solve_axes:
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver.solve_axes must be a non-empty list containing x and/or y"
+                            )
+                        if len(solve_axes) != len(set(solve_axes)):
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver.solve_axes entries must be unique"
+                            )
+                        invalid_axes = [
+                            axis for axis in solve_axes if axis not in {"x", "y"}
+                        ]
+                        if invalid_axes:
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver.solve_axes entries must be x or y"
+                            )
+                        min_dir_component_abs = float(
+                            special_solver_cfg.get("min_dir_component_abs", 0.2)
                         )
-                    theta_tolerance_deg = float(
-                        special_solver_cfg.get("theta_tolerance_deg", 0.01)
-                    )
-                    if theta_tolerance_deg <= 0.0:
-                        raise RuntimeError(
-                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
-                            "special_solver.theta_tolerance_deg must be > 0"
-                        )
+                        if min_dir_component_abs <= 0.0 or min_dir_component_abs > 1.0:
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "special_solver.min_dir_component_abs must be in (0, 1]"
+                            )
+                        if "x" in solve_axes:
+                            x_beam = str(special_solver_cfg.get("x_beam", ""))
+                            if x_beam not in PROJECTED_X_BEAMS:
+                                raise RuntimeError(
+                                    f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                    "special_solver.x_beam must be front_center or rear_center"
+                                )
+                            x_wall = self.walls[wall_pair.x_wall_name]
+                            if x_wall.orientation != "vertical":
+                                raise RuntimeError(
+                                    f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                    "special_solver solve_axes=[x] requires a vertical x_wall"
+                                )
+                            max_x_correction_m = float(
+                                special_solver_cfg.get("max_x_correction_m", 0.15)
+                            )
+                            if max_x_correction_m < 0.0:
+                                raise RuntimeError(
+                                    f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                    "special_solver.max_x_correction_m must be >= 0"
+                                )
+                        if "y" in solve_axes:
+                            y_beam = str(special_solver_cfg.get("y_beam", ""))
+                            if y_beam not in PROJECTED_Y_BEAMS:
+                                raise RuntimeError(
+                                    f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                    "special_solver.y_beam must be one of left_front, left_rear, right_front, right_rear"
+                                )
+                            side_wall = self.walls[wall_pair.side_wall_name]
+                            if side_wall.orientation != "horizontal":
+                                raise RuntimeError(
+                                    f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                    "special_solver solve_axes=[y] requires a horizontal side_wall"
+                                )
+                            max_y_correction_m = float(
+                                special_solver_cfg.get("max_y_correction_m", 0.15)
+                            )
+                            if max_y_correction_m < 0.0:
+                                raise RuntimeError(
+                                    f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                    "special_solver.max_y_correction_m must be >= 0"
+                                )
+
+    def _projected_xy_solve_axes(
+        self, special_solver_cfg: Dict[str, Any]
+    ) -> List[str]:
+        raw_axes = special_solver_cfg.get("solve_axes", [])
+        if not isinstance(raw_axes, list):
+            return []
+        return [str(axis).strip().lower() for axis in raw_axes]
 
     def _region_wall_pair_names(self, region: Dict[str, Any]) -> List[str]:
         if "active_wall_pair" in region:
@@ -1728,6 +1828,277 @@ class PoseSolveLayer:
             yaw_in_corner_deg=yaw_corner_deg,
         )
 
+    def _solve_projected_xy_with_lidar_yaw(
+        self,
+        coarse: CoarsePose,
+        range_frame: RangeFrame,
+        wall_pair: WallPair,
+        solver_cfg: Dict[str, Any],
+        special_solver_cfg: Dict[str, Any],
+        prior_age_ms: float,
+        region_name: Optional[str] = None,
+        usable_sensor_count: int = 0,
+        debug: Optional[Dict[str, Any]] = None,
+    ) -> SolveResult:
+        solve_axes = self._projected_xy_solve_axes(special_solver_cfg)
+        x_beam = (
+            str(special_solver_cfg.get("x_beam", "front_center"))
+            if "x" in solve_axes
+            else None
+        )
+        y_beam = (
+            str(special_solver_cfg.get("y_beam", "left_front"))
+            if "y" in solve_axes
+            else None
+        )
+        selected_beams = [
+            beam_name for beam_name in [x_beam, y_beam] if beam_name is not None
+        ]
+        selected_beam_count = len(selected_beams)
+        selected_valid_beam_count = sum(
+            1 for beam_name in selected_beams if range_frame.valid.get(beam_name, False)
+        )
+        min_dir_component_abs = float(
+            special_solver_cfg.get("min_dir_component_abs", 0.2)
+        )
+        max_x_correction_m = float(
+            special_solver_cfg.get(
+                "max_x_correction_m", solver_cfg.get("max_correction_xy_m", 0.15)
+            )
+        )
+        max_y_correction_m = float(
+            special_solver_cfg.get(
+                "max_y_correction_m", solver_cfg.get("max_correction_xy_m", 0.15)
+            )
+        )
+        max_correction_yaw_deg = float(solver_cfg.get("max_correction_yaw_deg", 10.0))
+
+        debug = self._with_special_solver_debug(
+            debug,
+            solver_type="projected_xy_with_lidar_yaw",
+            min_dir_component_abs=min_dir_component_abs,
+            solve_x=1.0 if "x" in solve_axes else 0.0,
+            solve_y=1.0 if "y" in solve_axes else 0.0,
+        )
+
+        x_map = coarse.x
+        y_map = coarse.y
+        solve_debug: Dict[str, Any] = {}
+
+        if "x" in solve_axes:
+            if x_beam is None or not range_frame.valid.get(x_beam, False):
+                debug = self._with_special_solver_debug(
+                    debug,
+                    failure_reason="PROJECTED_X_BEAM_INVALID",
+                )
+                return self._make_coarse_result(
+                    coarse,
+                    reason="PROJECTED_AXIS_UNAVAILABLE",
+                    valid_beam_count=selected_valid_beam_count,
+                    prior_age_ms=prior_age_ms,
+                    usable_sensor_count=usable_sensor_count,
+                    selected_beam_count=selected_beam_count,
+                    selected_valid_beam_count=selected_valid_beam_count,
+                    debug=debug,
+                    wall_pair_name=wall_pair.name,
+                    region_name=region_name,
+                    beam_mode="projected_xy_with_lidar_yaw",
+                    selected_beams=selected_beams,
+                )
+            x_value, x_debug = self._solve_projected_world_axis_from_beam(
+                beam_name=x_beam,
+                wall=self.walls[wall_pair.x_wall_name],
+                pose_yaw_deg=coarse.yaw_deg,
+                measured_range=range_frame.ranges[x_beam],
+                axis="x",
+                min_dir_component_abs=min_dir_component_abs,
+            )
+            solve_debug["x_solver"] = x_debug
+            if x_value is None:
+                debug = self._merge_special_solver_debug_map(debug, solve_debug)
+                debug = self._with_special_solver_debug(
+                    debug,
+                    failure_reason="PROJECTED_X_GEOMETRY_UNAVAILABLE",
+                )
+                return self._make_coarse_result(
+                    coarse,
+                    reason="PROJECTED_AXIS_UNAVAILABLE",
+                    valid_beam_count=selected_valid_beam_count,
+                    prior_age_ms=prior_age_ms,
+                    usable_sensor_count=usable_sensor_count,
+                    selected_beam_count=selected_beam_count,
+                    selected_valid_beam_count=selected_valid_beam_count,
+                    debug=debug,
+                    wall_pair_name=wall_pair.name,
+                    region_name=region_name,
+                    beam_mode="projected_xy_with_lidar_yaw",
+                    selected_beams=selected_beams,
+                )
+            x_map = x_value
+
+        if "y" in solve_axes:
+            if y_beam is None or not range_frame.valid.get(y_beam, False):
+                debug = self._merge_special_solver_debug_map(debug, solve_debug)
+                debug = self._with_special_solver_debug(
+                    debug,
+                    failure_reason="PROJECTED_Y_BEAM_INVALID",
+                )
+                return self._make_coarse_result(
+                    coarse,
+                    reason="PROJECTED_AXIS_UNAVAILABLE",
+                    valid_beam_count=selected_valid_beam_count,
+                    prior_age_ms=prior_age_ms,
+                    usable_sensor_count=usable_sensor_count,
+                    selected_beam_count=selected_beam_count,
+                    selected_valid_beam_count=selected_valid_beam_count,
+                    debug=debug,
+                    wall_pair_name=wall_pair.name,
+                    region_name=region_name,
+                    beam_mode="projected_xy_with_lidar_yaw",
+                    selected_beams=selected_beams,
+                )
+            y_value, y_debug = self._solve_projected_world_axis_from_beam(
+                beam_name=y_beam,
+                wall=self.walls[wall_pair.side_wall_name],
+                pose_yaw_deg=coarse.yaw_deg,
+                measured_range=range_frame.ranges[y_beam],
+                axis="y",
+                min_dir_component_abs=min_dir_component_abs,
+            )
+            solve_debug["y_solver"] = y_debug
+            if y_value is None:
+                debug = self._merge_special_solver_debug_map(debug, solve_debug)
+                debug = self._with_special_solver_debug(
+                    debug,
+                    failure_reason="PROJECTED_Y_GEOMETRY_UNAVAILABLE",
+                )
+                return self._make_coarse_result(
+                    coarse,
+                    reason="PROJECTED_AXIS_UNAVAILABLE",
+                    valid_beam_count=selected_valid_beam_count,
+                    prior_age_ms=prior_age_ms,
+                    usable_sensor_count=usable_sensor_count,
+                    selected_beam_count=selected_beam_count,
+                    selected_valid_beam_count=selected_valid_beam_count,
+                    debug=debug,
+                    wall_pair_name=wall_pair.name,
+                    region_name=region_name,
+                    beam_mode="projected_xy_with_lidar_yaw",
+                    selected_beams=selected_beams,
+                )
+            y_map = y_value
+
+        delta_x = x_map - coarse.x
+        delta_y = y_map - coarse.y
+        delta_xy_norm_m = math.hypot(delta_x, delta_y)
+        delta_yaw_deg = 0.0
+        debug = self._merge_special_solver_debug_map(debug, solve_debug)
+        debug = self._with_solver_debug(
+            debug,
+            candidate_pose={
+                "x": x_map,
+                "y": y_map,
+                "yaw_deg": coarse.yaw_deg,
+            },
+            correction_debug={
+                "delta_x_m": delta_x,
+                "delta_y_m": delta_y,
+                "delta_xy_norm_m": delta_xy_norm_m,
+                "delta_yaw_deg": delta_yaw_deg,
+                "max_correction_xy_m": max(max_x_correction_m, max_y_correction_m),
+                "max_correction_yaw_deg": max_correction_yaw_deg,
+            },
+        )
+        if "x" in solve_axes and abs(delta_x) > max_x_correction_m:
+            debug = self._with_special_solver_debug(
+                debug,
+                failure_reason="PROJECTED_X_CORRECTION_EXCEEDS_LIMIT",
+                max_x_correction_m=max_x_correction_m,
+            )
+            return self._make_coarse_result(
+                coarse,
+                reason="PROJECTED_AXIS_CORRECTION_EXCEEDS_LIMIT",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=debug,
+                wall_pair_name=wall_pair.name,
+                region_name=region_name,
+                beam_mode="projected_xy_with_lidar_yaw",
+                selected_beams=selected_beams,
+            )
+        if "y" in solve_axes and abs(delta_y) > max_y_correction_m:
+            debug = self._with_special_solver_debug(
+                debug,
+                failure_reason="PROJECTED_Y_CORRECTION_EXCEEDS_LIMIT",
+                max_y_correction_m=max_y_correction_m,
+            )
+            return self._make_coarse_result(
+                coarse,
+                reason="PROJECTED_AXIS_CORRECTION_EXCEEDS_LIMIT",
+                valid_beam_count=selected_valid_beam_count,
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                selected_beam_count=selected_beam_count,
+                selected_valid_beam_count=selected_valid_beam_count,
+                debug=debug,
+                wall_pair_name=wall_pair.name,
+                region_name=region_name,
+                beam_mode="projected_xy_with_lidar_yaw",
+                selected_beams=selected_beams,
+            )
+
+        residual_m, target_hits = self._evaluate_projected_solution(
+            pose_x=x_map,
+            pose_y=y_map,
+            pose_yaw_deg=coarse.yaw_deg,
+            range_frame=range_frame,
+            wall_pair=wall_pair,
+            x_beam=x_beam,
+            y_beam=y_beam,
+            solver_cfg=solver_cfg,
+        )
+        residual_thresh_m = float(solver_cfg.get("residual_thresh_m", 0.03))
+        score = max(0.0, 1.0 - residual_m / max(residual_thresh_m, 1e-6))
+        debug = self._with_solver_debug(
+            debug,
+            residual_debug={
+                "mean_residual_m": residual_m,
+                "target_hit_count": target_hits,
+                "residual_thresh_m": residual_thresh_m,
+                "min_valid_corner_beams": float(selected_valid_beam_count),
+                "validation_gates_block_pose": 0.0,
+                "would_fail_target_hit_gate": 0.0,
+                "would_fail_residual_gate": (
+                    1.0 if residual_m > residual_thresh_m else 0.0
+                ),
+            },
+        )
+        return self._make_result(
+            state=STATE_REFINED,
+            reason="OK",
+            pose_source="projected_xy_with_lidar_yaw",
+            localized=True,
+            x=x_map,
+            y=y_map,
+            yaw_deg=coarse.yaw_deg,
+            valid_beam_count=selected_valid_beam_count,
+            score=score,
+            prior_age_ms=prior_age_ms,
+            usable_sensor_count=usable_sensor_count,
+            selected_beam_count=selected_beam_count,
+            selected_valid_beam_count=selected_valid_beam_count,
+            target_hit_count=target_hits,
+            debug=debug,
+            residual_m=residual_m,
+            wall_pair_name=wall_pair.name,
+            region_name=region_name,
+            beam_mode="projected_xy_with_lidar_yaw",
+            selected_beams=selected_beams,
+        )
+
     def _iterate_compensated_theta(
         self,
         *,
@@ -1809,6 +2180,19 @@ class PoseSolveLayer:
                 special_solver_debug[key] = int(value)
             else:
                 special_solver_debug[key] = self._debug_float(float(value))
+        solver_debug["special_solver_debug"] = special_solver_debug
+        merged["solver_debug"] = solver_debug
+        return merged
+
+    def _merge_special_solver_debug_map(
+        self,
+        debug: Optional[Dict[str, Any]],
+        fields: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        merged = dict(debug or {})
+        solver_debug = dict(merged.get("solver_debug", {}))
+        special_solver_debug = dict(solver_debug.get("special_solver_debug", {}))
+        special_solver_debug.update(fields)
         solver_debug["special_solver_debug"] = special_solver_debug
         merged["solver_debug"] = solver_debug
         return merged
@@ -1957,6 +2341,101 @@ class PoseSolveLayer:
 
         mean_residual = sum(residuals) / max(len(residuals), 1)
         return mean_residual, target_hits
+
+    def _evaluate_projected_solution(
+        self,
+        pose_x: float,
+        pose_y: float,
+        pose_yaw_deg: float,
+        range_frame: RangeFrame,
+        wall_pair: WallPair,
+        x_beam: Optional[str],
+        y_beam: Optional[str],
+        solver_cfg: Dict[str, Any],
+    ) -> Tuple[float, int]:
+        wall_hit_tolerance_m = float(solver_cfg.get("wall_hit_tolerance_m", 0.05))
+        wall_extent_margin_m = float(solver_cfg.get("wall_extent_margin_m", 0.08))
+        checks: List[Tuple[str, WallSegment]] = []
+        if x_beam is not None and range_frame.valid.get(x_beam, False):
+            checks.append((x_beam, self.walls[wall_pair.x_wall_name]))
+        if y_beam is not None and range_frame.valid.get(y_beam, False):
+            checks.append((y_beam, self.walls[wall_pair.side_wall_name]))
+        if not checks:
+            return float("inf"), 0
+
+        residuals: List[float] = []
+        target_hits = 0
+        for beam_name, target_wall in checks:
+            hit_x, hit_y = self._beam_hit_point(
+                pose_x=pose_x,
+                pose_y=pose_y,
+                pose_yaw_deg=pose_yaw_deg,
+                sensor_name=beam_name,
+                measured_range=range_frame.ranges[beam_name],
+            )
+            target_distance, target_in_extent = self._point_to_wall_distance(
+                hit_x,
+                hit_y,
+                target_wall,
+                wall_extent_margin_m,
+            )
+            if target_distance <= wall_hit_tolerance_m and target_in_extent:
+                target_hits += 1
+            residuals.append(target_distance)
+        mean_residual = sum(residuals) / max(len(residuals), 1)
+        return mean_residual, target_hits
+
+    def _solve_projected_world_axis_from_beam(
+        self,
+        *,
+        beam_name: str,
+        wall: WallSegment,
+        pose_yaw_deg: float,
+        measured_range: float,
+        axis: str,
+        min_dir_component_abs: float,
+    ) -> Tuple[Optional[float], Dict[str, Any]]:
+        mount = self.sensor_mounts[beam_name]
+        origin_dx, origin_dy = rotate_2d(mount.pos_x, mount.pos_y, pose_yaw_deg)
+        dir_dx, dir_dy = rotate_2d(mount.dir_x, mount.dir_y, pose_yaw_deg)
+        beam_debug = {
+            "beam_name": beam_name,
+            "wall_name": wall.name,
+            "wall_orientation": wall.orientation,
+            "range_m": self._debug_float(float(measured_range)),
+            "origin_dx_m": self._debug_float(origin_dx),
+            "origin_dy_m": self._debug_float(origin_dy),
+            "dir_dx": self._debug_float(dir_dx),
+            "dir_dy": self._debug_float(dir_dy),
+            "axis": axis,
+        }
+        if not math.isfinite(float(measured_range)):
+            beam_debug["failure_reason"] = "RANGE_NON_FINITE"
+            return None, beam_debug
+        if axis == "x":
+            if wall.orientation != "vertical":
+                beam_debug["failure_reason"] = "TARGET_WALL_NOT_VERTICAL"
+                return None, beam_debug
+            if abs(dir_dx) < min_dir_component_abs:
+                beam_debug["failure_reason"] = "DIR_DX_TOO_SMALL"
+                beam_debug["dir_component_abs_min"] = self._debug_float(
+                    min_dir_component_abs
+                )
+                return None, beam_debug
+            axis_value = float(wall.const_value) - origin_dx - float(measured_range) * dir_dx
+        else:
+            if wall.orientation != "horizontal":
+                beam_debug["failure_reason"] = "TARGET_WALL_NOT_HORIZONTAL"
+                return None, beam_debug
+            if abs(dir_dy) < min_dir_component_abs:
+                beam_debug["failure_reason"] = "DIR_DY_TOO_SMALL"
+                beam_debug["dir_component_abs_min"] = self._debug_float(
+                    min_dir_component_abs
+                )
+                return None, beam_debug
+            axis_value = float(wall.const_value) - origin_dy - float(measured_range) * dir_dy
+        beam_debug["axis_value"] = self._debug_float(axis_value)
+        return axis_value, beam_debug
 
     def _beam_hit_point(
         self,
