@@ -200,6 +200,17 @@ wall_pool:
     from: red_forest11_righttop
     to: red_forest08_righttop
     enabled: true
+  red_forest10_top:
+    from: red_forest10_righttop
+    to: red_forest11_righttop
+    enabled: true
+  red_forest11_top:
+    from: red_forest11_righttop
+    to: red_forest12_righttop
+  red_forest12_top:
+    from: red_forest12_righttop
+    to: red_forest12_lefttop
+    enabled: true
   
 
 ##------------蓝色墙池---------------##
