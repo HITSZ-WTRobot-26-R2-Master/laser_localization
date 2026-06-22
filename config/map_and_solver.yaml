@@ -128,6 +128,10 @@ wall_pool:
     from: red_c05
     to: red_c06
     enabled: true
+  red_forest03_left:
+    from: red_forest03_leftbottom
+    to: red_forest03_lefttop
+    enabled: true
   red_forest03_right:
     from: red_forest03_rightbottom
     to: red_forest03_righttop
@@ -701,26 +705,26 @@ wall_pair_candidates:
     
   red_cross0203_region_yaw90:
     x_wall:
-      wall: red_forest03_left
-      role: front
+      wall: red_forest02_right
+      role: rear
     side_wall:
-      wall: red_forest03_top
+      wall: red_forest02_top
       role: right
     corner_world_pose:
       x: 4.4
-      y: -1.2
+      y: -3.6
       yaw_deg: 90.0
 
   red_cross0203_region_yaw-90:
     x_wall:
-      wall: red_forest03_left
-      role: rear
+      wall: red_forest02_right
+      role: front
     side_wall:
-      wall: red_forest03_top
+      wall: red_forest02_top
       role: left
     corner_world_pose:
       x: 4.4
-      y: -1.2
+      y: -3.6
       yaw_deg: -90.0 
 
   red_cross0205_region_yaw0:
@@ -1489,7 +1493,7 @@ scene_profiles:
             type: projected_xy_with_lidar_yaw
             solve_axes: [x, y]
             x_beam: front_center
-            y_beam: right_left
+            y_beam: right_front
             min_dir_component_abs: 0.2
             max_x_correction_m: 0.15
             max_y_correction_m: 0.15
@@ -1517,10 +1521,12 @@ scene_profiles:
           active_wall_pair: red_cross0203_region_yaw90
           special_solver:
             type: projected_xy_with_lidar_yaw
-            solve_axes: [y]
-            y_beam: right_front
+            solve_axes: [x, y]
+            x_beam: rear_center
+            y_beam: right_rear
             min_dir_component_abs: 0.2
             max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
           priority: 100
 
         - name: red_cross0203_region_yaw-90
@@ -1530,10 +1536,12 @@ scene_profiles:
           active_wall_pair: red_cross0203_region_yaw-90
           special_solver:
             type: projected_xy_with_lidar_yaw
-            solve_axes: [y]
-            y_beam: left_rear
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: left_front
             min_dir_component_abs: 0.2
             max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
           priority: 100
 
         - name: red_cross0104_region_yaw0
@@ -1543,9 +1551,11 @@ scene_profiles:
           active_wall_pair: red_cross0104_region_yaw0
           special_solver:
             type: projected_xy_with_lidar_yaw
-            solve_axes: [x]
-            y_beam: front_center
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: left_front
             min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
             max_y_correction_m: 0.15
           priority: 100
 
@@ -1559,7 +1569,7 @@ scene_profiles:
             solve_axes: [x]
             x_beam: front_center
             min_dir_component_abs: 0.2
-            max_y_correction_m: 0.15
+            max_x_correction_m: 0.15
           priority: 100
 
         - name: red_cross0405_region_yaw90
@@ -1573,6 +1583,7 @@ scene_profiles:
             x_beam: front_center
             y_beam: right_front
             min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
             max_y_correction_m: 0.15
           priority: 100
 
@@ -1587,6 +1598,7 @@ scene_profiles:
             x_beam: rear_center
             y_beam: left_rear
             min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
             max_y_correction_m: 0.15
           priority: 100
 
