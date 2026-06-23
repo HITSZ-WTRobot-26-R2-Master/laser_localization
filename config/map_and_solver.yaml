@@ -1,6 +1,9 @@
 # RobotCon Docker runtime uses this package-local file for map and solver
 # configuration. Keep world geometry, wall pairs, scene profiles, and solver
 # tuning changes here.
+# Optional: each region may define range_offsets_m in meters, keyed by sensor
+# name, to add/subtract a fixed value from selected laser ranges. Omitted
+# sensors default to 0.0 offset.
 
 ## 注：regions可以选择使用圆形区域或矩形区域
 ## 圆形区域：需要有x，y和max_lidar_distance_to_center_m参数（都是值）
@@ -346,6 +349,18 @@ wall_pair_candidates:
       x: 3.2
       y: 0.0
       yaw_deg: 0.0
+
+  red_start_region_yaw-90:
+    x_wall:
+      wall: red_shelf_wall
+      role: rear
+    side_wall:
+      wall: red_edge_wall
+      role: right
+    corner_world_pose:
+      x: 0.0
+      y: -0.125
+      yaw_deg: -90.0 
 
   red_forest_frontleft:
     x_wall:
@@ -1241,6 +1256,13 @@ scene_profiles:
             max_iterations: 8
             theta_tolerance_deg: 0.01
           priority: 200
+        
+        - name: red_start_region_yaw-90
+          x_range: [0.0, 0.8]
+          y_range: [-1.8, -1.0]
+          yaw_deg: -90.0
+          active_wall_pair: red_start_region_yaw-90
+          priority: 100
 
         - name: red_spear_region_yaw-90
           x_range: [0.35, 1.55]       ## 距离矛头架两侧边缘10mm
