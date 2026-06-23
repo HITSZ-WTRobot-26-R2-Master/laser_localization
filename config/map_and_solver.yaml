@@ -31,8 +31,8 @@ scene_manager:
 
 corner_pool:
 ##------------红方角点---------------##
-  red_c00: [1.55, -0.125]    ## red矛头架远端
-  red_c01: [0.0, -0.125]    ## red矛头架贴场地最边缘
+  red_c00: [1.55, -0.129]    ## red矛头架远端
+  red_c01: [0.0, -0.129]    ## red矛头架贴场地最边缘
   red_c02: [0.0, -2.0]    ## red_r2启动区处边缘点
   red_special_axis_origin: [0.0, 0.0]
 
@@ -335,7 +335,7 @@ wall_pair_candidates:
       role: right
     corner_world_pose:
       x: 0.0
-      y: -0.125
+      y: -0.129
       yaw_deg: -90.0
 
   red_special_front_compensated:
@@ -359,7 +359,7 @@ wall_pair_candidates:
       role: right
     corner_world_pose:
       x: 0.0
-      y: -0.125
+      y: -0.129
       yaw_deg: -90.0 
 
   red_forest_frontleft:
