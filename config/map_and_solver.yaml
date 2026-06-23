@@ -338,6 +338,18 @@ wall_pair_candidates:
       y: -0.129
       yaw_deg: -90.0
 
+  red_spear_region_yaw90:
+    x_wall:
+      wall: red_shelf_wall
+      role: front
+    side_wall:
+      wall: red_edge_wall
+      role: left
+    corner_world_pose:
+      x: 0.0
+      y: -0.129
+      yaw_deg: 90.0
+
   red_special_front_compensated:
     x_wall:
       wall: red_special_front_vertical
@@ -1269,6 +1281,13 @@ scene_profiles:
           y_range: [-3.0, -0.125]
           yaw_deg: -90.0
           active_wall_pair: red_spear_region_yaw-90
+          priority: 100
+
+        - name: red_spear_region_yaw90
+          x_range: [0.35, 1.55]       ## 距离矛头架两侧边缘10mm
+          y_range: [-3.0, -0.125]
+          yaw_deg: 90.0
+          active_wall_pair: red_spear_region_yaw90
           priority: 100
 
         - name: red_forest_front
