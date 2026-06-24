@@ -1684,595 +1684,595 @@ wall_pair_candidates:
 #       y: 1.2
 #       yaw_deg: -90.0
 
-# scene_profiles:
-# ##------------红色---------------##
-#   mode_red:
-#     constraints:
-#       orthogonal_required: true
-#       expected_span_m: 1.2
-#     wall_selector:
-#       yaw_tolerance_deg: 10.0
-#       regions:
-#         - name: red_special_front_compensated_region
-#           x_range: [0.0, 0.8]
-#           y_range: [-1.8, -1.0]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_special_front_compensated
-#           special_solver:
-#             type: compensated_front_side
-#             compensation_x0_m: 0.125
-#             max_iterations: 8
-#             theta_tolerance_deg: 0.01
-#           priority: 200
+scene_profiles:
+##------------红色---------------##
+  mode_red:
+    constraints:
+      orthogonal_required: true
+      expected_span_m: 1.2
+    wall_selector:
+      yaw_tolerance_deg: 10.0
+      regions:
+        - name: red_special_front_compensated_region
+          x_range: [0.0, 0.8]
+          y_range: [-1.8, -1.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_special_front_compensated
+          special_solver:
+            type: compensated_front_side
+            compensation_x0_m: 0.125
+            max_iterations: 8
+            theta_tolerance_deg: 0.01
+          priority: 200
         
-#         - name: red_start_region_yaw-90
-#           x_range: [0.0, 0.8]
-#           y_range: [-1.8, -1.0]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_start_region_yaw-90
-#           priority: 100
+        - name: red_start_region_yaw-90
+          x_range: [0.0, 0.8]
+          y_range: [-1.8, -1.0]
+          yaw_deg: -90.0
+          active_wall_pair: red_start_region_yaw-90
+          priority: 100
 
-#         - name: red_spear_region_yaw-90
-#           x_range: [0.35, 1.55]       ## 距离矛头架两侧边缘10mm
-#           y_range: [-3.0, -0.125]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_spear_region_yaw-90
-#           priority: 100
+        - name: red_spear_region_yaw-90
+          x_range: [0.35, 1.55]       ## 距离矛头架两侧边缘10mm
+          y_range: [-3.0, -0.125]
+          yaw_deg: -90.0
+          active_wall_pair: red_spear_region_yaw-90
+          priority: 100
 
-#         - name: red_spear_region_yaw90
-#           x_range: [0.35, 1.55]       ## 距离矛头架两侧边缘10mm
-#           y_range: [-3.0, -0.125]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_spear_region_yaw90
-#           priority: 100
+        - name: red_spear_region_yaw90
+          x_range: [0.35, 1.55]       ## 距离矛头架两侧边缘10mm
+          y_range: [-3.0, -0.125]
+          yaw_deg: 90.0
+          active_wall_pair: red_spear_region_yaw90
+          priority: 100
 
-#         - name: red_forest_front
-#           x_range: [2.0, 3.2]
-#           y_range: [-4.8, -1.2]
-#           yaw_deg: 0.0
-#           active_wall_pairs: [red_forest_frontleft, red_forest_frontright]
-#           priority: 100
+        - name: red_forest_front
+          x_range: [2.0, 3.2]
+          y_range: [-4.8, -1.2]
+          yaw_deg: 0.0
+          active_wall_pairs: [red_forest_frontleft, red_forest_frontright]
+          priority: 100
 
-#         - name: red_forest02_region_yaw0
-#           x_range: [3.6, 4.0]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest02_region_yaw0
-#           priority: 100
+        - name: red_forest02_region_yaw0
+          x_range: [3.6, 4.0]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest02_region_yaw0
+          priority: 100
         
-#         - name: red_forest02_region_yaw90
-#           x_range: [3.6, 4.0]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest02_region_yaw90
-#           priority: 100
+        - name: red_forest02_region_yaw90
+          x_range: [3.6, 4.0]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest02_region_yaw90
+          priority: 100
 
-#         - name: red_forest02_region_yaw-90
-#           x_range: [3.6, 4.0]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest02_region_yaw-90
-#           priority: 100
+        - name: red_forest02_region_yaw-90
+          x_range: [3.6, 4.0]
+          y_range: [-3.2, -2.8]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest02_region_yaw-90
+          priority: 100
 
-#         - name: red_forest04_region_yaw0
-#           x_range: [4.8, 5.2]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest04_region_yaw0
-#           priority: 100
+        - name: red_forest04_region_yaw0
+          x_range: [4.8, 5.2]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest04_region_yaw0
+          priority: 100
         
-#         - name: red_forest04_region_yaw90
-#           x_range: [4.8, 5.2]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest04_region_yaw90
-#           priority: 100
+        - name: red_forest04_region_yaw90
+          x_range: [4.8, 5.2]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest04_region_yaw90
+          priority: 100
         
-#         - name: red_forest04_region_yaw-90
-#           x_range: [4.8, 5.2]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest04_region_yaw-90
-#           priority: 100
+        - name: red_forest04_region_yaw-90
+          x_range: [4.8, 5.2]
+          y_range: [-4.4, -4.0]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest04_region_yaw-90
+          priority: 100
 
-#         - name: red_forest05_region_yaw0
-#           x_range: [4.8, 5.2]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest05_region_yaw0
-#           priority: 100
+        - name: red_forest05_region_yaw0
+          x_range: [4.8, 5.2]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest05_region_yaw0
+          priority: 100
         
-#         - name: red_forest05_region_yaw90
-#           x_range: [4.8, 5.2]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest05_region_yaw90
-#           priority: 100
+        - name: red_forest05_region_yaw90
+          x_range: [4.8, 5.2]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest05_region_yaw90
+          priority: 100
         
-#         - name: red_forest05_region_yaw-90
-#           x_range: [4.8, 5.2]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest05_region_yaw-90
-#           priority: 100 
+        - name: red_forest05_region_yaw-90
+          x_range: [4.8, 5.2]
+          y_range: [-3.2, -2.8]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest05_region_yaw-90
+          priority: 100 
 
-#         - name: red_forest09_region_yaw0
-#           x_range: [6.0, 6.4]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest09_region_yaw0
-#           priority: 100
+        - name: red_forest09_region_yaw0
+          x_range: [6.0, 6.4]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest09_region_yaw0
+          priority: 100
 
-#         - name: red_forest09_region_yaw90
-#           x_range: [6.0, 6.4]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest09_region_yaw90
-#           priority: 100
+        - name: red_forest09_region_yaw90
+          x_range: [6.0, 6.4]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest09_region_yaw90
+          priority: 100
 
-#         - name: red_forest09_region_yaw-90
-#           x_range: [6.0, 6.4]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest09_region_yaw-90
-#           priority: 100
+        - name: red_forest09_region_yaw-90
+          x_range: [6.0, 6.4]
+          y_range: [-2.0, -1.6]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest09_region_yaw-90
+          priority: 100
 
-#         - name: red_forest12_region_yaw0
-#           x_range: [7.2, 7.6]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest12_region_yaw0
-#           priority: 100
+        - name: red_forest12_region_yaw0
+          x_range: [7.2, 7.6]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest12_region_yaw0
+          priority: 100
 
-#         - name: red_forest12_region_yaw90
-#           x_range: [7.2, 7.6]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest12_region_yaw90
-#           priority: 100
+        - name: red_forest12_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest12_region_yaw90
+          priority: 100
 
-#         - name: red_forest12_region_yaw-90
-#           x_range: [7.2, 7.6]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest12_region_yaw-90
-#           priority: 100
+        - name: red_forest12_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [-2.0, -1.6]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest12_region_yaw-90
+          priority: 100
         
-#         - name: red_forest10_region_yaw0
-#           x_range: [7.2, 7.6]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest10_region_yaw0
-#           priority: 100
+        - name: red_forest10_region_yaw0
+          x_range: [7.2, 7.6]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest10_region_yaw0
+          priority: 100
 
-#         - name: red_forest10_region_yaw90
-#           x_range: [7.2, 7.6]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest10_region_yaw90
-#           priority: 100
+        - name: red_forest10_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest10_region_yaw90
+          priority: 100
         
-#         - name: red_forest10_region_yaw-90
-#           x_range: [7.2, 7.6]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest10_region_yaw-90
-#           priority: 100
+        - name: red_forest10_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [-4.4, -4.0]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest10_region_yaw-90
+          priority: 100
 
-#         - name: red_forest03_region_yaw0
-#           x_range: [3.6, 4.0]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest03_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x]
-#             x_beam: front_center
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#           priority: 100
+        - name: red_forest03_region_yaw0
+          x_range: [3.6, 4.0]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest03_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: front_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
 
         
-#         - name: red_forest03_region_yaw90
-#           x_range: [3.6, 4.0]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest03_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: right_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_forest03_region_yaw90
+          x_range: [3.6, 4.0]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest03_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
         
-#         - name: red_forest03_region_yaw-90
-#           x_range: [3.6, 4.0]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest03_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_forest03_region_yaw-90
+          x_range: [3.6, 4.0]
+          y_range: [-2.0, -1.6]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest03_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_forest07_region_yaw0
-#           x_range: [6.0, 6.4]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest07_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_forest07_region_yaw0
+          x_range: [6.0, 6.4]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest07_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_forest07_region_yaw90
-#           x_range: [6.0, 6.4]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest07_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x]
-#             x_beam: front_center
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#           priority: 100
+        - name: red_forest07_region_yaw90
+          x_range: [6.0, 6.4]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest07_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: front_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
 
-#         - name: red_forest07_region_yaw-90
-#           x_range: [6.0, 6.4]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest07_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x]
-#             x_beam: rear_center
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#           priority: 100
+        - name: red_forest07_region_yaw-90
+          x_range: [6.0, 6.4]
+          y_range: [-4.4, -4.0]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest07_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: rear_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
 
-#         - name: red_forest11_region_yaw0
-#           x_range: [7.2, 7.6]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_forest11_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x]
-#             x_beam: rear_center
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#           priority: 100
+        - name: red_forest11_region_yaw0
+          x_range: [7.2, 7.6]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 0.0
+          active_wall_pair: red_forest11_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: rear_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
 
-#         - name: red_forest11_region_yaw90
-#           x_range: [7.2, 7.6]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_forest11_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_forest11_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 90.0
+          active_wall_pair: red_forest11_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_forest11_region_yaw-90
-#           x_range: [7.2, 7.6]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_forest11_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: right_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_forest11_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [-3.2, -2.8]
+          yaw_deg: -90.0
+          active_wall_pair: red_forest11_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0102_region_yaw90
-#           x_range: [3.6, 4.0]
-#           y_range: [-3.8, -3.4]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_cross0102_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x, y]
-#             x_beam: front_center
-#             y_beam: right_front
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0102_region_yaw90
+          x_range: [3.6, 4.0]
+          y_range: [-3.8, -3.4]
+          yaw_deg: 90.0
+          active_wall_pair: red_cross0102_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0102_region_yaw-90
-#           x_range: [3.6, 4.0]
-#           y_range: [-3.8, -3.4]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_cross0102_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x, y]
-#             x_beam: rear_center
-#             y_beam: left_rear
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0102_region_yaw-90
+          x_range: [3.6, 4.0]
+          y_range: [-3.8, -3.4]
+          yaw_deg: -90.0
+          active_wall_pair: red_cross0102_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: rear_center
+            y_beam: left_rear
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0203_region_yaw90
-#           x_range: [3.6, 4.0]
-#           y_range: [-2.6, -2.2]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_cross0203_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x, y]
-#             x_beam: rear_center
-#             y_beam: right_rear
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0203_region_yaw90
+          x_range: [3.6, 4.0]
+          y_range: [-2.6, -2.2]
+          yaw_deg: 90.0
+          active_wall_pair: red_cross0203_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: rear_center
+            y_beam: right_rear
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0203_region_yaw-90
-#           x_range: [3.6, 4.0]
-#           y_range: [-2.6, -2.2]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_cross0203_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x, y]
-#             x_beam: front_center
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0203_region_yaw-90
+          x_range: [3.6, 4.0]
+          y_range: [-2.6, -2.2]
+          yaw_deg: -90.0
+          active_wall_pair: red_cross0203_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0104_region_yaw0
-#           x_range: [4.2, 4.6]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_cross0104_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x, y]
-#             x_beam: front_center
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0104_region_yaw0
+          x_range: [4.2, 4.6]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_cross0104_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0205_region_yaw0
-#           x_range: [4.2, 4.6]
-#           y_range: [-3.2, -2.8]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_cross0205_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x]
-#             x_beam: front_center
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0205_region_yaw0
+          x_range: [4.2, 4.6]
+          y_range: [-3.2, -2.8]
+          yaw_deg: 0.0
+          active_wall_pair: red_cross0205_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: front_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0405_region_yaw90
-#           x_range: [4.8, 5.2]
-#           y_range: [-3.8, -3.4]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_cross0405_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x, y]
-#             x_beam: front_center
-#             y_beam: right_front
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0405_region_yaw90
+          x_range: [4.8, 5.2]
+          y_range: [-3.8, -3.4]
+          yaw_deg: 90.0
+          active_wall_pair: red_cross0405_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0405_region_yaw-90
-#           x_range: [4.8, 5.2]
-#           y_range: [-3.8, -3.4]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_cross0405_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [x, y]
-#             x_beam: rear_center
-#             y_beam: left_rear
-#             min_dir_component_abs: 0.2
-#             max_x_correction_m: 0.15
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0405_region_yaw-90
+          x_range: [4.8, 5.2]
+          y_range: [-3.8, -3.4]
+          yaw_deg: -90.0
+          active_wall_pair: red_cross0405_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: rear_center
+            y_beam: left_rear
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0506_region_yaw90
-#           x_range: [4.8, 5.2]
-#           y_range: [-2.6, -2.2]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_cross0506_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: right_rear
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0506_region_yaw90
+          x_range: [4.8, 5.2]
+          y_range: [-2.6, -2.2]
+          yaw_deg: 90.0
+          active_wall_pair: red_cross0506_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_rear
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
         
-#         - name: red_cross0506_region_yaw-90
-#           x_range: [4.8, 5.2]
-#           y_range: [-2.6, -2.2]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_cross0506_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0506_region_yaw-90
+          x_range: [4.8, 5.2]
+          y_range: [-2.6, -2.2]
+          yaw_deg: -90.0
+          active_wall_pair: red_cross0506_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0609_region_yaw0
-#           x_range: [5.4, 5.8]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_cross0609_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: right_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0609_region_yaw0
+          x_range: [5.4, 5.8]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 0.0
+          active_wall_pair: red_cross0609_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0407_region_yaw0
-#           x_range: [5.4, 5.8]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_cross0407_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0407_region_yaw0
+          x_range: [5.4, 5.8]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_cross0407_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0809_region_yaw90
-#           x_range: [6.0, 6.4]
-#           y_range: [-2.6, -2.2]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_cross0809_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0809_region_yaw90
+          x_range: [6.0, 6.4]
+          y_range: [-2.6, -2.2]
+          yaw_deg: 90.0
+          active_wall_pair: red_cross0809_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0809_region_yaw-90
-#           x_range: [6.0, 6.4]
-#           y_range: [-2.6, -2.2]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_cross0809_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: right_rear
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0809_region_yaw-90
+          x_range: [6.0, 6.4]
+          y_range: [-2.6, -2.2]
+          yaw_deg: -90.0
+          active_wall_pair: red_cross0809_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_rear
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0710_region_yaw0
-#           x_range: [6.6, 7.0]
-#           y_range: [-4.4, -4.0]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_cross0710_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0710_region_yaw0
+          x_range: [6.6, 7.0]
+          y_range: [-4.4, -4.0]
+          yaw_deg: 0.0
+          active_wall_pair: red_cross0710_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross0910_region_yaw0
-#           x_range: [6.6, 7.0]
-#           y_range: [-2.0, -1.6]
-#           yaw_deg: 0.0
-#           active_wall_pair: red_cross0910_region_yaw0
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: right_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross0910_region_yaw0
+          x_range: [6.6, 7.0]
+          y_range: [-2.0, -1.6]
+          yaw_deg: 0.0
+          active_wall_pair: red_cross0910_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross1011_region_yaw90
-#           x_range: [7.2, 7.6]
-#           y_range: [-3.8, -3.4]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_cross1011_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross1011_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [-3.8, -3.4]
+          yaw_deg: 90.0
+          active_wall_pair: red_cross1011_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross1011_region_yaw-90
-#           x_range: [7.2, 7.6]
-#           y_range: [-3.8, -3.4]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_cross1011_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: right_rear
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross1011_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [-3.8, -3.4]
+          yaw_deg: -90.0
+          active_wall_pair: red_cross1011_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_rear
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross1112_region_yaw90
-#           x_range: [7.2, 7.6]
-#           y_range: [-2.6, -2.2]
-#           yaw_deg: 90.0
-#           active_wall_pair: red_cross1112_region_yaw90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: left_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross1112_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [-2.6, -2.2]
+          yaw_deg: 90.0
+          active_wall_pair: red_cross1112_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_cross1112_region_yaw-90
-#           x_range: [7.2, 7.6]
-#           y_range: [-2.6, -2.2]
-#           yaw_deg: -90.0
-#           active_wall_pair: red_cross1112_region_yaw-90
-#           special_solver:
-#             type: projected_xy_with_lidar_yaw
-#             solve_axes: [y]
-#             y_beam: right_front
-#             min_dir_component_abs: 0.2
-#             max_y_correction_m: 0.15
-#           priority: 100
+        - name: red_cross1112_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [-2.6, -2.2]
+          yaw_deg: -90.0
+          active_wall_pair: red_cross1112_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
 
-#         - name: red_final_yaw90
-#           x_range: [9.99, 11.61]
-#           y_range: [-4.0, -0.135]
-#           yaw_deg: 90.0
-#           active_wall_pairs: [red_final_region_left_yaw90, red_final_region_right_yaw90]
-#           priority: 100
+        - name: red_final_yaw90
+          x_range: [9.99, 11.61]
+          y_range: [-4.0, -0.135]
+          yaw_deg: 90.0
+          active_wall_pairs: [red_final_region_left_yaw90, red_final_region_right_yaw90]
+          priority: 100
 
-#         - name: red_final_yaw-90
-#           x_range: [9.99, 11.61]
-#           y_range: [-4.0, -0.135]
-#           yaw_deg: -90.0
-#           active_wall_pairs: [red_final_region_left_yaw-90, red_final_region_right_yaw-90]
-#           priority: 100
+        - name: red_final_yaw-90
+          x_range: [9.99, 11.61]
+          y_range: [-4.0, -0.135]
+          yaw_deg: -90.0
+          active_wall_pairs: [red_final_region_left_yaw-90, red_final_region_right_yaw-90]
+          priority: 100
 
-#     solver:
-#       min_valid_corner_beams: 3
-#       max_theta_abs_deg: 45.0
-#       wall_hit_tolerance_m: 0.05
-#       wall_extent_margin_m: 0.08
-#       max_correction_xy_m: 0.15
-#       max_correction_yaw_deg: 10.0
-#       residual_thresh_m: 0.03
+    solver:
+      min_valid_corner_beams: 3
+      max_theta_abs_deg: 45.0
+      wall_hit_tolerance_m: 0.05
+      wall_extent_margin_m: 0.08
+      max_correction_xy_m: 0.15
+      max_correction_yaw_deg: 10.0
+      residual_thresh_m: 0.03
 
 #   mode_blue:
 #     constraints:
