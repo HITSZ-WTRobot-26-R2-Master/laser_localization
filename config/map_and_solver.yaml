@@ -534,7 +534,7 @@ wall_pair_candidates:
     corner_world_pose:
       x: 5.6
       y: -2.4
-      yaw_deg: 180.0      ##不知道是0还是180
+      yaw_deg: 0.0      
   
   red_forest09_region_yaw90:
     x_wall:
