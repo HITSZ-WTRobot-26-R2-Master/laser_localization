@@ -40,12 +40,12 @@ class AgvPoseRefinerNode(Node):
         )
 
         # ---- Input topic ----------------------------------------------------
-        self.declare_parameter("lidar_pose_topic", "/odin_base_pose")
+        self.declare_parameter("lidar_pose_topic", "/pose/lidar")
         self.declare_parameter("lidar_input_format", "custom_pose_fields")
         self.declare_parameter("lidar_message_type", "interfaces.msg.R2Pose")
 
         # ---- Output topics --------------------------------------------------
-        self.declare_parameter("laser_pose_topic", "/laser_pose")
+        self.declare_parameter("laser_pose_topic", "/pose/laser")
         self.declare_parameter("laser_status_topic", "/laser_status")
         self.declare_parameter("tf_parent_frame", "map")
         self.declare_parameter("tf_child_frame", "base_link")

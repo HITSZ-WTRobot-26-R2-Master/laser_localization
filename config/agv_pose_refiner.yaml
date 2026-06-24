@@ -1,0 +1,42 @@
+agv_pose_refiner:
+  ros__parameters:
+    # 输入粗定位位姿话题。
+    lidar_pose_topic: "/pose/lidar"
+    # 输出精化位姿话题。
+    laser_pose_topic: "/pose/laser"
+    # 输出状态文本话题。
+    laser_status_topic: "/laser_status"
+    # TF 父帧。
+    tf_parent_frame: "map"
+    # TF 子帧。
+    tf_child_frame: "base_link"
+    # 是否发布 map -> base_link TF。
+    publish_tf: true
+    # STP23L TOF 传感器串口路径。
+    serial_port: "/dev/laser_serial"
+    # STP23L TOF 传感器串口波特率。
+    serial_baudrate: 115200
+    # 世界坐标系名称。
+    world_frame_id: "map"
+    # 激活的场景模式（mode_a 为蓝方矛头架区域）。
+    active_scene: "mode_a"
+    # 激光输入格式。
+    lidar_input_format: "custom_pose_fields"
+    # 激光输入消息类型。
+    lidar_message_type: "interfaces.msg.R2Pose"
+    # STP23L 串口超时。
+    serial_timeout_sec: 0.02
+    # 最小发布间隔。
+    serial_min_publish_interval_ms: 5.0
+    # 轮询频率。
+    serial_poll_rate_hz: 10.0
+    # 查询响应超时。
+    serial_response_timeout_sec: 0.02
+    # 是否启用解码日志。
+    serial_decode_log_enabled: true
+    # 解码日志间隔。
+    serial_decode_log_interval_ms: 0
+    # 是否期望匹配设备 ID。
+    serial_expect_matching_device_id: true
+    # 查询设备 ID 列表。
+    serial_query_device_ids: [1, 2]
