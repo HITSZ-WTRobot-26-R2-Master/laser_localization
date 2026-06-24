@@ -31,8 +31,8 @@ scene_manager:
 
 corner_pool:
 ##------------红方角点---------------##
-  red_c00: [1.55, -0.129]    ## red矛头架远端
-  red_c01: [0.0, -0.129]    ## red矛头架贴场地最边缘
+  red_c00: [1.55, -0.125]    ## red矛头架远端
+  red_c01: [0.0, -0.125]    ## red矛头架贴场地最边缘
   red_c02: [0.0, -2.0]    ## red_r2启动区处边缘点
   red_special_axis_origin: [0.0, 0.0]
 
@@ -61,6 +61,11 @@ corner_pool:
   red_forest12_righttop:    [8.0, -2.4]
   red_forest11_righttop:    [8.0, -3.6]
   red_forest10_righttop:    [8.0, -4.8]
+
+  red_final_shelf01:        [9.0, -0.135]
+  red_final_shelf02:        [12.0, -0.135]
+  red_final_edge01:         [9.0, -4.0]
+  red_final_edge02:         [12.0, -4.0]
 
 
  
@@ -219,6 +224,19 @@ wall_pool:
     from: red_forest12_lefttop
     to: red_forest09_lefttop
     enabled: true
+
+  red_final_shelf:
+    from: red_final_shelf01
+    to: red_final_shelf02
+    enabled: true
+  red_final_edgeleft: 
+    from: red_final_shelf01
+    to: red_final_edge01
+    enabled: true
+  red_final_edgeright:
+    from: red_final_shelf02
+    to: red_final_edge02
+    enabled: true
   
 
 ##------------蓝色墙池---------------##
@@ -335,7 +353,7 @@ wall_pair_candidates:
       role: right
     corner_world_pose:
       x: 0.0
-      y: -0.129
+      y: -0.125
       yaw_deg: -90.0
 
   red_spear_region_yaw90:
@@ -347,7 +365,7 @@ wall_pair_candidates:
       role: left
     corner_world_pose:
       x: 0.0
-      y: -0.129
+      y: -0.125
       yaw_deg: 90.0
 
   red_special_front_compensated:
@@ -371,7 +389,7 @@ wall_pair_candidates:
       role: right
     corner_world_pose:
       x: 0.0
-      y: -0.129
+      y: -0.125
       yaw_deg: -90.0 
 
   red_forest_frontleft:
@@ -516,7 +534,7 @@ wall_pair_candidates:
     corner_world_pose:
       x: 5.6
       y: -2.4
-      yaw_deg: 180.0      ##不知道是0还是180
+      yaw_deg: 0.0      
   
   red_forest09_region_yaw90:
     x_wall:
@@ -974,6 +992,54 @@ wall_pair_candidates:
       y: -1.2
       yaw_deg: -90.0
 
+  red_final_region_left_yaw90:
+    x_wall:
+      wall: red_final_shelf
+      role: front
+    side_wall:
+      wall: red_final_edgeleft
+      role: left
+    corner_world_pose:
+      x: 9.5
+      y: -0.135
+      yaw_deg: 90.0
+
+  red_final_region_right_yaw90:
+    x_wall:
+      wall: red_final_shelf
+      role: front
+    side_wall:
+      wall: red_final_edgeright
+      role: right
+    corner_world_pose:
+      x: 12.0
+      y: -0.135
+      yaw_deg: 90.0
+
+  red_final_region_left_yaw-90:
+    x_wall:
+      wall: red_final_shelf
+      role: rear
+    side_wall:
+      wall: red_final_edgeleft
+      role: right
+    corner_world_pose:
+      x: 9.5
+      y: -0.135
+      yaw_deg: -90.0
+
+  red_final_region_right_yaw-90:
+    x_wall:
+      wall: red_final_shelf
+      role: rear
+    side_wall:
+      wall: red_final_edgeright
+      role: left
+    corner_world_pose:
+      x: 12.0
+      y: -0.135
+      yaw_deg: -90.0
+  
 ##------------蓝色区域---------------##
   blue_spear_region_yaw90:
     x_wall:
@@ -1815,6 +1881,19 @@ scene_profiles:
             max_y_correction_m: 0.15
           priority: 100
 
+        - name: red_final_yaw90
+          x_range: [9.99, 11.61]
+          y_range: [-4.0, -0.135]
+          yaw_deg: 90.0
+          active_wall_pairs: [red_final_region_left_yaw90, red_final_region_right_yaw90]
+          priority: 100
+
+        - name: red_final_yaw-90
+          x_range: [9.99, 11.61]
+          y_range: [-4.0, -0.135]
+          yaw_deg: -90.0
+          active_wall_pairs: [red_final_region_left_yaw-90, red_final_region_right_yaw-90]
+          priority: 100
 
     solver:
       min_valid_corner_beams: 3
