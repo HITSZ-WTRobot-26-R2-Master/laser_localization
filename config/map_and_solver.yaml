@@ -357,10 +357,7 @@ wall_pool:
     from: blue_final_shelf02
     to: blue_final_edge02
     enabled: true
-  blue_forest10_top:
-  from: blue_forest10_righttop
-  to: blue_forest11_righttop
-  enabled: true
+  
 
 
 wall_pair_candidates:
@@ -1629,10 +1626,10 @@ wall_pair_candidates:
 
   blue_cross0710_region_yaw0:
     x_wall:
-      wall: blue_forest10_top
+      wall: blue_forest07_top  
       role: front
     side_wall:
-      wall: blue_forest11_left
+      wall: blue_forest11_left  
       role: right
     corner_world_pose:
       x: 8.0
