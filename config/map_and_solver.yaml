@@ -357,6 +357,10 @@ wall_pool:
     from: blue_final_shelf02
     to: blue_final_edge02
     enabled: true
+  blue_forest10_top:
+  from: blue_forest10_righttop
+  to: blue_forest11_righttop
+  enabled: true
 
 
 wall_pair_candidates:
