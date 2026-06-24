@@ -89,6 +89,9 @@ COPY resource/ src/positioning/laser_localization/resource/
 COPY scripts/ src/positioning/laser_localization/scripts/
 COPY test/ src/positioning/laser_localization/test/
 
+RUN echo '# placeholder - overridden at runtime by docker-compose volume mount' \
+       > src/positioning/laser_localization/config/agv_pose_refiner.yaml
+
 RUN source "/opt/ros/${ROS_DISTRO}/setup.bash" \
     && source "${WORKSPACE_DIR}/install/setup.bash" \
     && colcon build \
