@@ -31,8 +31,8 @@ scene_manager:
 
 corner_pool:
 ##------------红方角点---------------##
-  red_c00: [1.55, -0.129]    ## red矛头架远端
-  red_c01: [0.0, -0.129]    ## red矛头架贴场地最边缘
+  red_c00: [1.55, -0.125]    ## red矛头架远端
+  red_c01: [0.0, -0.125]    ## red矛头架贴场地最边缘
   red_c02: [0.0, -2.0]    ## red_r2启动区处边缘点
   red_special_axis_origin: [0.0, 0.0]
 
@@ -62,12 +62,17 @@ corner_pool:
   red_forest11_righttop:    [8.0, -3.6]
   red_forest10_righttop:    [8.0, -4.8]
 
+  red_final_shelf01:        [9.0, -0.135]
+  red_final_shelf02:        [12.0, -0.135]
+  red_final_edge01:         [9.0, -4.0]
+  red_final_edge02:         [12.0, -4.0]
+
 
  
-##------------蓝方角点---------------##
-  blue_c00: [1.55, 0.125]    ## blue矛头架远端
-  blue_c01: [0.0, 0.125]    ## blue矛头架贴场地最边缘
-  blue_c02: [0.0, 2.0]    ## blue_r2启动区处边缘点
+  ## ------------ 蓝方角点 ---------------
+  blue_c00: [1.55, 0.125]     ## blue矛头架远端
+  blue_c01: [0.0, 0.125]      ## blue矛头架贴场地最边缘
+  blue_c02: [0.0, 2.0]        ## blue_r2启动区处边缘点
   blue_special_axis_origin: [0.0, 0.0]
 
   blue_c03: [2.0, 0.0]
@@ -96,7 +101,12 @@ corner_pool:
   blue_forest11_lefttop:     [8.0, 3.6]
   blue_forest10_lefttop:     [8.0, 4.8]
 
-##------------待选墙池---------------##
+  blue_final_shelf01:        [9.0, 0.135]
+  blue_final_shelf02:        [12.0, 0.135]
+  blue_final_edge01:         [9.0, 4.0]
+  blue_final_edge02:         [12.0, 4.0]
+
+
 wall_pool:
 ##------------红色墙池---------------##
   red_shelf_wall:
@@ -219,9 +229,22 @@ wall_pool:
     from: red_forest12_lefttop
     to: red_forest09_lefttop
     enabled: true
+
+  red_final_shelf:
+    from: red_final_shelf01
+    to: red_final_shelf02
+    enabled: true
+  red_final_edgeleft: 
+    from: red_final_shelf01
+    to: red_final_edge01
+    enabled: true
+  red_final_edgeright:
+    from: red_final_shelf02
+    to: red_final_edge02
+    enabled: true
   
 
-##------------蓝色墙池---------------##
+## ------------ 蓝色墙池 ---------------
   blue_shelf_wall:
     from: blue_c00
     to: blue_c01
@@ -322,6 +345,18 @@ wall_pool:
     from: blue_forest11_lefttop
     to: blue_forest08_lefttop
     enabled: true
+  blue_final_shelf:
+    from: blue_final_shelf01
+    to: blue_final_shelf02
+    enabled: true
+  blue_final_edgeleft:
+    from: blue_final_shelf01
+    to: blue_final_edge01
+    enabled: true
+  blue_final_edgeright:
+    from: blue_final_shelf02
+    to: blue_final_edge02
+    enabled: true
 
 
 wall_pair_candidates:
@@ -335,7 +370,7 @@ wall_pair_candidates:
       role: right
     corner_world_pose:
       x: 0.0
-      y: -0.129
+      y: -0.125
       yaw_deg: -90.0
 
   red_spear_region_yaw90:
@@ -347,7 +382,7 @@ wall_pair_candidates:
       role: left
     corner_world_pose:
       x: 0.0
-      y: -0.129
+      y: -0.125
       yaw_deg: 90.0
 
   red_special_front_compensated:
@@ -371,7 +406,7 @@ wall_pair_candidates:
       role: right
     corner_world_pose:
       x: 0.0
-      y: -0.129
+      y: -0.125
       yaw_deg: -90.0 
 
   red_forest_frontleft:
@@ -516,7 +551,7 @@ wall_pair_candidates:
     corner_world_pose:
       x: 5.6
       y: -2.4
-      yaw_deg: 180.0      ##不知道是0还是180
+      yaw_deg: 0.0      
   
   red_forest09_region_yaw90:
     x_wall:
@@ -974,6 +1009,54 @@ wall_pair_candidates:
       y: -1.2
       yaw_deg: -90.0
 
+  red_final_region_left_yaw90:
+    x_wall:
+      wall: red_final_shelf
+      role: front
+    side_wall:
+      wall: red_final_edgeleft
+      role: left
+    corner_world_pose:
+      x: 9.5
+      y: -0.135
+      yaw_deg: 90.0
+
+  red_final_region_right_yaw90:
+    x_wall:
+      wall: red_final_shelf
+      role: front
+    side_wall:
+      wall: red_final_edgeright
+      role: right
+    corner_world_pose:
+      x: 12.0
+      y: -0.135
+      yaw_deg: 90.0
+
+  red_final_region_left_yaw-90:
+    x_wall:
+      wall: red_final_shelf
+      role: rear
+    side_wall:
+      wall: red_final_edgeleft
+      role: right
+    corner_world_pose:
+      x: 9.5
+      y: -0.135
+      yaw_deg: -90.0
+
+  red_final_region_right_yaw-90:
+    x_wall:
+      wall: red_final_shelf
+      role: rear
+    side_wall:
+      wall: red_final_edgeright
+      role: left
+    corner_world_pose:
+      x: 12.0
+      y: -0.135
+      yaw_deg: -90.0
+  
 ##------------蓝色区域---------------##
   blue_spear_region_yaw90:
     x_wall:
@@ -986,6 +1069,18 @@ wall_pair_candidates:
       x: 0.0
       y: 0.125
       yaw_deg: 90.0
+
+  blue_spear_region_yaw-90:
+    x_wall:
+      wall: blue_shelf_wall
+      role: front
+    side_wall:
+      wall: blue_edge_wall
+      role: right
+    corner_world_pose:
+      x: 0.0
+      y: 0.125
+      yaw_deg: -90.0
 
   blue_special_front_compensated:
     x_wall:
@@ -1010,7 +1105,7 @@ wall_pair_candidates:
       x: 3.2
       y: 6.0
       yaw_deg: 0.0
-  
+
   blue_forest_frontright:
     x_wall:
       wall: blue_forest_front_right
@@ -1070,7 +1165,7 @@ wall_pair_candidates:
       x: 5.6
       y: 3.6
       yaw_deg: 0.0
-      
+
   blue_forest04_region_yaw90:
     x_wall:
       wall: blue_forest05_left
@@ -1130,7 +1225,7 @@ wall_pair_candidates:
       x: 5.6
       y: 2.4
       yaw_deg: -90.0
-      
+
   blue_forest09_region_yaw0:
     x_wall:
       wall: blue_forest06_top
@@ -1141,8 +1236,8 @@ wall_pair_candidates:
     corner_world_pose:
       x: 5.6
       y: 2.4
-      yaw_deg: 180.0      ##不知道是0还是180
-  
+      yaw_deg: 0.0       
+
   blue_forest09_region_yaw90:
     x_wall:
       wall: blue_forest09_left
@@ -1154,7 +1249,7 @@ wall_pair_candidates:
       x: 5.6
       y: 2.4
       yaw_deg: 90.0
-  
+
   blue_forest09_region_yaw-90:
     x_wall:
       wall: blue_forest09_left
@@ -1166,7 +1261,7 @@ wall_pair_candidates:
       x: 5.6
       y: 2.4
       yaw_deg: -90.0
-  
+
   blue_forest12_region_yaw0:
     x_wall:
       wall: blue_forest09_top
@@ -1178,7 +1273,7 @@ wall_pair_candidates:
       x: 6.8
       y: 2.4
       yaw_deg: 0.0
-  
+
   blue_forest12_region_yaw90:
     x_wall:
       wall: blue_forest12_left
@@ -1190,7 +1285,7 @@ wall_pair_candidates:
       x: 6.8
       y: 2.4
       yaw_deg: 90.0
-  
+
   blue_forest12_region_yaw-90:
     x_wall:
       wall: blue_forest12_left
@@ -1198,11 +1293,11 @@ wall_pair_candidates:
     side_wall:
       wall: blue_forest09_top
       role: right
-    corner_world_pose:  
+    corner_world_pose:
       x: 6.8
       y: 2.4
       yaw_deg: -90.0
-  
+
   blue_forest10_region_yaw0:
     x_wall:
       wall: blue_forest07_top
@@ -1214,7 +1309,7 @@ wall_pair_candidates:
       x: 6.8
       y: 3.6
       yaw_deg: 0.0
-  
+
   blue_forest10_region_yaw90:
     x_wall:
       wall: blue_forest11_left
@@ -1226,7 +1321,7 @@ wall_pair_candidates:
       x: 6.8
       y: 3.6
       yaw_deg: 90.0
-  
+
   blue_forest10_region_yaw-90:
     x_wall:
       wall: blue_forest11_left
@@ -1238,15 +1333,367 @@ wall_pair_candidates:
       x: 6.8
       y: 3.6
       yaw_deg: -90.0
-      
 
+  blue_forest03_region_yaw0:
+    x_wall:
+      wall: blue_forest03_top
+      role: front
+    side_wall:
+      wall: blue_forest03_left
+      role: left
+    corner_world_pose:
+      x: 4.4
+      y: 2.4
+      yaw_deg: 0.0
 
+  blue_forest03_region_yaw90:
+    x_wall:
+      wall: blue_forest03_left
+      role: rear
+    side_wall:
+      wall: blue_forest03_top
+      role: right
+    corner_world_pose:
+      x: 4.4
+      y: 2.4
+      yaw_deg: 90.0
 
+  blue_forest03_region_yaw-90:
+    x_wall:
+      wall: blue_forest03_left
+      role: front
+    side_wall:
+      wall: blue_forest03_top
+      role: left
+    corner_world_pose:
+      x: 4.4
+      y: 2.4
+      yaw_deg: -90.0
 
+  blue_forest07_region_yaw0:
+    x_wall:
+      wall: blue_forest07_top
+      role: front
+    side_wall:
+      wall: blue_forest08_left
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: 3.6
+      yaw_deg: 0.0
 
+  blue_forest07_region_yaw90:
+    x_wall:
+      wall: blue_forest08_left
+      role: front
+    side_wall:
+      wall: blue_forest07_top
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: 3.6
+      yaw_deg: 90.0
 
+  blue_forest07_region_yaw-90:
+    x_wall:
+      wall: blue_forest08_left
+      role: rear
+    side_wall:
+      wall: blue_forest07_top
+      role: left
+    corner_world_pose:
+      x: 6.8
+      y: 3.6
+      yaw_deg: -90.0
 
+  blue_forest11_region_yaw0:
+    x_wall:
+      wall: blue_forest08_top
+      role: rear
+    side_wall:
+      wall: blue_forest11_left
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: 3.6
+      yaw_deg: 0.0
 
+  blue_forest11_region_yaw90:
+    x_wall:
+      wall: blue_forest11_left
+      role: rear
+    side_wall:
+      wall: blue_forest08_top
+      role: left
+    corner_world_pose:
+      x: 6.8
+      y: 3.6
+      yaw_deg: 90.0
+
+  blue_forest11_region_yaw-90:
+    x_wall:
+      wall: blue_forest11_left
+      role: front
+    side_wall:
+      wall: blue_forest08_top
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: 3.6
+      yaw_deg: -90.0
+
+  ## -------- 交叉区（cross）--------
+  blue_cross0102_region_yaw90:
+    x_wall:
+      wall: blue_forest03_left
+      role: front
+    side_wall:
+      wall: blue_forest02_top
+      role: right
+    corner_world_pose:
+      x: 4.4
+      y: 2.4
+      yaw_deg: 90.0
+
+  blue_cross0102_region_yaw-90:
+    x_wall:
+      wall: blue_forest03_left
+      role: rear
+    side_wall:
+      wall: blue_forest02_top
+      role: left
+    corner_world_pose:
+      x: 4.4
+      y: 2.4
+      yaw_deg: -90.0
+
+  blue_cross0203_region_yaw90:
+    x_wall:
+      wall: blue_forest02_left
+      role: rear
+    side_wall:
+      wall: blue_forest02_top
+      role: right
+    corner_world_pose:
+      x: 4.4
+      y: 3.6
+      yaw_deg: 90.0
+
+  blue_cross0203_region_yaw-90:
+    x_wall:
+      wall: blue_forest02_left
+      role: front
+    side_wall:
+      wall: blue_forest02_top
+      role: left
+    corner_world_pose:
+      x: 4.4
+      y: 3.6
+      yaw_deg: -90.0
+
+  blue_cross0205_region_yaw0:
+    x_wall:
+      wall: blue_forest05_top
+      role: front
+    side_wall:
+      wall: blue_forest06_left
+      role: right
+    corner_world_pose:
+      x: 5.6
+      y: 2.4
+      yaw_deg: 0.0
+
+  blue_cross0104_region_yaw0:
+    x_wall:
+      wall: blue_forest04_top
+      role: front
+    side_wall:
+      wall: blue_forest05_left
+      role: right
+    corner_world_pose:
+      x: 5.6
+      y: 3.6
+      yaw_deg: 0.0
+
+  blue_cross0405_region_yaw90:
+    x_wall:
+      wall: blue_forest06_left
+      role: front
+    side_wall:
+      wall: blue_forest05_top
+      role: right
+    corner_world_pose:
+      x: 5.6
+      y: 2.4
+      yaw_deg: 90.0
+
+  blue_cross0405_region_yaw-90:
+    x_wall:
+      wall: blue_forest06_left
+      role: rear
+    side_wall:
+      wall: blue_forest05_top
+      role: left
+    corner_world_pose:
+      x: 5.6
+      y: 2.4
+      yaw_deg: -90.0
+
+  blue_cross0506_region_yaw90:
+    x_wall:
+      wall: blue_forest06_left
+      role: front
+    side_wall:
+      wall: blue_forest05_top
+      role: right
+    corner_world_pose:
+      x: 5.6
+      y: 2.4
+      yaw_deg: 90.0
+
+  blue_cross0506_region_yaw-90:
+    x_wall:
+      wall: blue_forest06_left
+      role: front
+    side_wall:
+      wall: blue_forest05_top
+      role: left
+    corner_world_pose:
+      x: 5.6
+      y: 2.4
+      yaw_deg: -90.0
+
+  blue_cross0407_region_yaw0:
+    x_wall:
+      wall: blue_forest07_top
+      role: front
+    side_wall:
+      wall: blue_forest08_left
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: 3.6
+      yaw_deg: 0.0
+
+  blue_cross0508_region_yaw0:
+    x_wall:
+      wall: blue_forest05_top
+      role: front
+    side_wall:
+      wall: blue_forest06_left
+      role: right
+    corner_world_pose:
+      x: 5.6
+      y: 2.4
+      yaw_deg: 0.0
+
+  blue_cross0609_region_yaw0:
+    x_wall:
+      wall: blue_forest09_top
+      role: front
+    side_wall:
+      wall: blue_forest09_left
+      role: left
+    corner_world_pose:
+      x: 6.8
+      y: 2.4
+      yaw_deg: 0.0
+
+  blue_cross0809_region_yaw90:
+    x_wall:
+      wall: blue_forest09_left
+      role: rear
+    side_wall:
+      wall: blue_forest06_top
+      role: left
+    corner_world_pose:
+      x: 5.6
+      y: 2.4
+      yaw_deg: 90.0
+
+  blue_cross0809_region_yaw-90:
+    x_wall:
+      wall: blue_forest09_left
+      role: front
+    side_wall:
+      wall: blue_forest06_top
+      role: right
+    corner_world_pose:
+      x: 5.6
+      y: 2.4
+      yaw_deg: -90.0
+
+  blue_cross0710_region_yaw0:
+    x_wall:
+      wall: blue_forest10_top
+      role: front
+    side_wall:
+      wall: blue_forest11_left
+      role: right
+    corner_world_pose:
+      x: 8.0
+      y: 3.6
+      yaw_deg: 0.0
+
+  blue_cross0910_region_yaw0:
+    x_wall:
+      wall: blue_forest12_top
+      role: front
+    side_wall:
+      wall: blue_forest12_left
+      role: left
+    corner_world_pose:
+      x: 8.0
+      y: 2.4
+      yaw_deg: 0.0
+
+  blue_cross1011_region_yaw90:
+    x_wall:
+      wall: blue_forest12_left
+      role: front
+    side_wall:
+      wall: blue_forest08_top
+      role: left
+    corner_world_pose:
+      x: 6.8
+      y: 2.4
+      yaw_deg: 90.0
+
+  blue_cross1011_region_yaw-90:
+    x_wall:
+      wall: blue_forest12_left
+      role: rear
+    side_wall:
+      wall: blue_forest08_top
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: 2.4
+      yaw_deg: -90.0
+
+  blue_cross1112_region_yaw90:
+    x_wall:
+      wall: blue_forest12_left
+      role: front
+    side_wall:
+      wall: blue_forest09_top
+      role: left
+    corner_world_pose:
+      x: 6.8
+      y: 1.2
+      yaw_deg: 90.0
+
+  blue_cross1112_region_yaw-90:
+    x_wall:
+      wall: blue_forest12_left
+      role: rear
+    side_wall:
+      wall: blue_forest09_top
+      role: right
+    corner_world_pose:
+      x: 6.8
+      y: 1.2
+      yaw_deg: -90.0
 
 scene_profiles:
 ##------------红色---------------##
@@ -1815,6 +2262,19 @@ scene_profiles:
             max_y_correction_m: 0.15
           priority: 100
 
+        - name: red_final_yaw90
+          x_range: [9.99, 11.61]
+          y_range: [-4.0, -0.135]
+          yaw_deg: 90.0
+          active_wall_pairs: [red_final_region_left_yaw90, red_final_region_right_yaw90]
+          priority: 100
+
+        - name: red_final_yaw-90
+          x_range: [9.99, 11.61]
+          y_range: [-4.0, -0.135]
+          yaw_deg: -90.0
+          active_wall_pairs: [red_final_region_left_yaw-90, red_final_region_right_yaw-90]
+          priority: 100
 
     solver:
       min_valid_corner_beams: 3
@@ -1825,16 +2285,18 @@ scene_profiles:
       max_correction_yaw_deg: 10.0
       residual_thresh_m: 0.03
 
-##------------蓝色---------------##
   mode_blue:
     constraints:
       orthogonal_required: true
       expected_span_m: 1.2
+
     wall_selector:
       yaw_tolerance_deg: 10.0
       regions:
-        ## Special-case region support:
-        ## use active_wall_pairs: [pair_a, pair_b] to run two solvers and publish only the selected result
+
+        # =========================
+        # 特殊区（高优先级）
+        # =========================
         - name: blue_special_front_compensated_region
           x_range: [0.0, 0.8]
           y_range: [1.0, 1.8]
@@ -1847,13 +2309,26 @@ scene_profiles:
             theta_tolerance_deg: 0.01
           priority: 200
 
+        # =========================
+        # 矛头架区
+        # =========================
         - name: blue_spear_region_yaw90
-          x_range: [0.36, 1.4]       ## 距离矛头架两侧边缘10mm
-          y_range: [0.125, 1.4]
+          x_range: [0.36, 1.55]
+          y_range: [0.125, 3.0]
           yaw_deg: 90.0
           active_wall_pair: blue_spear_region_yaw90
           priority: 100
 
+        - name: blue_spear_region_yaw-90
+          x_range: [0.36, 1.55]
+          y_range: [0.125, 3.0]
+          yaw_deg: -90.0
+          active_wall_pair: blue_spear_region_yaw-90
+          priority: 100
+
+        # =========================
+        # 森林前沿区
+        # =========================
         - name: blue_forest_front
           x_range: [2.0, 3.2]
           y_range: [1.2, 4.8]
@@ -1861,13 +2336,16 @@ scene_profiles:
           active_wall_pairs: [blue_forest_frontleft, blue_forest_frontright]
           priority: 100
 
+        # =========================
+        # forest02 区域
+        # =========================
         - name: blue_forest02_region_yaw0
           x_range: [3.6, 4.0]
           y_range: [2.8, 3.2]
           yaw_deg: 0.0
           active_wall_pair: blue_forest02_region_yaw0
           priority: 100
-        
+
         - name: blue_forest02_region_yaw90
           x_range: [3.6, 4.0]
           y_range: [2.8, 3.2]
@@ -1882,20 +2360,23 @@ scene_profiles:
           active_wall_pair: blue_forest02_region_yaw-90
           priority: 100
 
+        # =========================
+        # forest04 区域
+        # =========================
         - name: blue_forest04_region_yaw0
           x_range: [4.8, 5.2]
           y_range: [4.0, 4.4]
           yaw_deg: 0.0
           active_wall_pair: blue_forest04_region_yaw0
           priority: 100
-        
+
         - name: blue_forest04_region_yaw90
           x_range: [4.8, 5.2]
           y_range: [4.0, 4.4]
           yaw_deg: 90.0
           active_wall_pair: blue_forest04_region_yaw90
           priority: 100
-        
+
         - name: blue_forest04_region_yaw-90
           x_range: [4.8, 5.2]
           y_range: [4.0, 4.4]
@@ -1903,27 +2384,33 @@ scene_profiles:
           active_wall_pair: blue_forest04_region_yaw-90
           priority: 100
 
+        # =========================
+        # forest05 区域
+        # =========================
         - name: blue_forest05_region_yaw0
           x_range: [4.8, 5.2]
           y_range: [2.8, 3.2]
           yaw_deg: 0.0
           active_wall_pair: blue_forest05_region_yaw0
           priority: 100
-        
+
         - name: blue_forest05_region_yaw90
           x_range: [4.8, 5.2]
           y_range: [2.8, 3.2]
           yaw_deg: 90.0
           active_wall_pair: blue_forest05_region_yaw90
           priority: 100
-        
+
         - name: blue_forest05_region_yaw-90
           x_range: [4.8, 5.2]
           y_range: [2.8, 3.2]
           yaw_deg: -90.0
           active_wall_pair: blue_forest05_region_yaw-90
-          priority: 100 
+          priority: 100
 
+        # =========================
+        # forest09 区域
+        # =========================
         - name: blue_forest09_region_yaw0
           x_range: [6.0, 6.4]
           y_range: [1.6, 2.0]
@@ -1945,6 +2432,9 @@ scene_profiles:
           active_wall_pair: blue_forest09_region_yaw-90
           priority: 100
 
+        # =========================
+        # forest12 区域
+        # =========================
         - name: blue_forest12_region_yaw0
           x_range: [7.2, 7.6]
           y_range: [1.6, 2.0]
@@ -1965,7 +2455,10 @@ scene_profiles:
           yaw_deg: -90.0
           active_wall_pair: blue_forest12_region_yaw-90
           priority: 100
-        
+
+        # =========================
+        # forest10 区域
+        # =========================
         - name: blue_forest10_region_yaw0
           x_range: [7.2, 7.6]
           y_range: [4.0, 4.4]
@@ -1979,14 +2472,434 @@ scene_profiles:
           yaw_deg: 90.0
           active_wall_pair: blue_forest10_region_yaw90
           priority: 100
-        
+
         - name: blue_forest10_region_yaw-90
           x_range: [7.2, 7.6]
           y_range: [4.0, 4.4]
           yaw_deg: -90.0
           active_wall_pair: blue_forest10_region_yaw-90
           priority: 100
-          
+
+        # =========================
+        # forest03（特殊 solver）
+        # =========================
+        - name: blue_forest03_region_yaw0
+          x_range: [3.6, 4.0]
+          y_range: [1.6, 2.0]
+          yaw_deg: 0.0
+          active_wall_pair: blue_forest03_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: front_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: blue_forest03_region_yaw90
+          x_range: [3.6, 4.0]
+          y_range: [1.6, 2.0]
+          yaw_deg: 90.0
+          active_wall_pair: blue_forest03_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_forest03_region_yaw-90
+          x_range: [3.6, 4.0]
+          y_range: [1.6, 2.0]
+          yaw_deg: -90.0
+          active_wall_pair: blue_forest03_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        # =========================
+        # forest07（特殊 solver）
+        # =========================
+        - name: blue_forest07_region_yaw0
+          x_range: [6.0, 6.4]
+          y_range: [4.0, 4.4]
+          yaw_deg: 0.0
+          active_wall_pair: blue_forest07_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_forest07_region_yaw90
+          x_range: [6.0, 6.4]
+          y_range: [4.0, 4.4]
+          yaw_deg: 90.0
+          active_wall_pair: blue_forest07_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: front_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: blue_forest07_region_yaw-90
+          x_range: [6.0, 6.4]
+          y_range: [4.0, 4.4]
+          yaw_deg: -90.0
+          active_wall_pair: blue_forest07_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: rear_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        # =========================
+        # forest11（特殊 solver）
+        # =========================
+        - name: blue_forest11_region_yaw0
+          x_range: [7.2, 7.6]
+          y_range: [2.8, 3.2]
+          yaw_deg: 0.0
+          active_wall_pair: blue_forest11_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: rear_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: blue_forest11_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [2.8, 3.2]
+          yaw_deg: 90.0
+          active_wall_pair: blue_forest11_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_forest11_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [2.8, 3.2]
+          yaw_deg: -90.0
+          active_wall_pair: blue_forest11_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        # =========================
+        # 交叉区 cross
+        # =========================
+        - name: blue_cross0102_region_yaw90
+          x_range: [3.6, 4.0]
+          y_range: [3.4, 3.8]
+          yaw_deg: 90.0
+          active_wall_pair: blue_cross0102_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0102_region_yaw-90
+          x_range: [3.6, 4.0]
+          y_range: [3.4, 3.8]
+          yaw_deg: -90.0
+          active_wall_pair: blue_cross0102_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: rear_center
+            y_beam: right_rear
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0203_region_yaw90
+          x_range: [3.6, 4.0]
+          y_range: [2.2, 2.6]
+          yaw_deg: 90.0
+          active_wall_pair: blue_cross0203_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: rear_center
+            y_beam: left_rear
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0203_region_yaw-90
+          x_range: [3.6, 4.0]
+          y_range: [2.2, 2.6]
+          yaw_deg: -90.0
+          active_wall_pair: blue_cross0203_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0104_region_yaw0
+          x_range: [4.2, 4.6]
+          y_range: [4.0, 4.4]
+          yaw_deg: 0.0
+          active_wall_pair: blue_cross0104_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0205_region_yaw0
+          x_range: [4.2, 4.6]
+          y_range: [2.8, 3.2]
+          yaw_deg: 0.0
+          active_wall_pair: blue_cross0205_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x]
+            x_beam: front_center
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0405_region_yaw90
+          x_range: [4.8, 5.2]
+          y_range: [3.4, 3.8]
+          yaw_deg: 90.0
+          active_wall_pair: blue_cross0405_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: front_center
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0405_region_yaw-90
+          x_range: [4.8, 5.2]
+          y_range: [3.4, 3.8]
+          yaw_deg: -90.0
+          active_wall_pair: blue_cross0405_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [x, y]
+            x_beam: rear_center
+            y_beam: right_rear
+            min_dir_component_abs: 0.2
+            max_x_correction_m: 0.15
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0506_region_yaw90
+          x_range: [4.8, 5.2]
+          y_range: [2.2, 2.6]
+          yaw_deg: 90.0
+          active_wall_pair: blue_cross0506_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_rear
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0506_region_yaw-90
+          x_range: [4.8, 5.2]
+          y_range: [2.2, 2.6]
+          yaw_deg: -90.0
+          active_wall_pair: blue_cross0506_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0609_region_yaw0
+          x_range: [5.4, 5.8]
+          y_range: [1.6, 2.0]
+          yaw_deg: 0.0
+          active_wall_pair: blue_cross0609_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0407_region_yaw0
+          x_range: [5.4, 5.8]
+          y_range: [4.0, 4.4]
+          yaw_deg: 0.0
+          active_wall_pair: blue_cross0407_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0809_region_yaw90
+          x_range: [6.0, 6.4]
+          y_range: [2.2, 2.6]
+          yaw_deg: 90.0
+          active_wall_pair: blue_cross0809_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0809_region_yaw-90
+          x_range: [6.0, 6.4]
+          y_range: [2.2, 2.6]
+          yaw_deg: -90.0
+          active_wall_pair: blue_cross0809_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_rear
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0710_region_yaw0
+          x_range: [6.6, 7.0]
+          y_range: [4.0, 4.4]
+          yaw_deg: 0.0
+          active_wall_pair: blue_cross0710_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross0910_region_yaw0
+          x_range: [6.6, 7.0]
+          y_range: [1.6, 2.0]
+          yaw_deg: 0.0
+          active_wall_pair: blue_cross0910_region_yaw0
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross1011_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [3.4, 3.8]
+          yaw_deg: 90.0
+          active_wall_pair: blue_cross1011_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross1011_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [3.4, 3.8]
+          yaw_deg: -90.0
+          active_wall_pair: blue_cross1011_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_rear
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross1112_region_yaw90
+          x_range: [7.2, 7.6]
+          y_range: [2.2, 2.6]
+          yaw_deg: 90.0
+          active_wall_pair: blue_cross1112_region_yaw90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: right_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        - name: blue_cross1112_region_yaw-90
+          x_range: [7.2, 7.6]
+          y_range: [2.2, 2.6]
+          yaw_deg: -90.0
+          active_wall_pair: blue_cross1112_region_yaw-90
+          special_solver:
+            type: projected_xy_with_lidar_yaw
+            solve_axes: [y]
+            y_beam: left_front
+            min_dir_component_abs: 0.2
+            max_y_correction_m: 0.15
+          priority: 100
+
+        # =========================
+        # 终末区 final
+        # =========================
+        - name: blue_final_yaw90
+          x_range: [9.99, 11.61]
+          y_range: [0.135, 4.0]
+          yaw_deg: 90.0
+          active_wall_pairs: [blue_final_region_left_yaw90, blue_final_region_right_yaw90]
+          priority: 100
+
+        - name: blue_final_yaw-90
+          x_range: [9.99, 11.61]
+          y_range: [0.135, 4.0]
+          yaw_deg: -90.0
+          active_wall_pairs: [blue_final_region_left_yaw-90, blue_final_region_right_yaw-90]
+          priority: 100
+
     solver:
       min_valid_corner_beams: 3
       max_theta_abs_deg: 45.0
