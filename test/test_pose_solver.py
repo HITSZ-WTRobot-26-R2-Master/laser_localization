@@ -715,6 +715,63 @@ class TestCompensatedFrontSideSolver(unittest.TestCase):
             "PROJECTED_Y_CORRECTION_EXCEEDS_LIMIT",
         )
 
+    def test_dual_wall_pair_front_fallback_supports_horizontal_front_wall(self) -> None:
+        coarse = CoarsePose(
+            stamp=Time(nanoseconds=0),
+            x=2.3,
+            y=-1.225,
+            z=0.0,
+            roll_rad=0.0,
+            pitch_rad=0.0,
+            yaw_deg=90.0,
+        )
+        range_frame = self._make_range_frame(front_center=1.125)
+        wall_pairs = [
+            WallPair(
+                name="rotated_pair_left",
+                x_wall_name="projected_local_front_horizontal",
+                x_wall_role="front",
+                side_wall_name="projected_local_side_vertical",
+                side_wall_role="left",
+                corner_x=3.2,
+                corner_y=0.0,
+                corner_yaw_deg=90.0,
+            ),
+            WallPair(
+                name="rotated_pair_right",
+                x_wall_name="projected_local_front_horizontal",
+                x_wall_role="front",
+                side_wall_name="projected_local_side_vertical",
+                side_wall_role="right",
+                corner_x=3.2,
+                corner_y=0.0,
+                corner_yaw_deg=90.0,
+            ),
+        ]
+
+        result = self.solver._build_dual_wall_pair_front_x_fallback_result(
+            coarse=coarse,
+            range_frame=range_frame,
+            wall_pairs=wall_pairs,
+            solver_cfg={
+                "max_correction_xy_m": 0.15,
+                "max_correction_yaw_deg": 10.0,
+            },
+            prior_age_ms=0.0,
+            region_name="rotated_dual_region",
+        )
+
+        self.assertEqual(result.state, STATE_REFINED)
+        self.assertEqual(result.reason, "OK")
+        self.assertAlmostEqual(result.x, 2.3, places=6)
+        self.assertAlmostEqual(result.y, -1.125, places=6)
+        self.assertAlmostEqual(result.yaw_deg, 90.0, places=6)
+        self.assertEqual(result.selected_beams, ["front_center"])
+        solver_debug = result.debug["solver_debug"]
+        self.assertEqual(solver_debug["front_wall_orientation"], "horizontal")
+        self.assertEqual(solver_debug["fallback_solved_axis"], "y")
+        self.assertAlmostEqual(solver_debug["front_wall_const_y_m"], 0.0, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1166,10 +1166,10 @@ class PoseSolveLayer:
                 selected_beams=selected_beams,
             )
 
-        x_wall, failure_reason = self._resolve_dual_wall_pair_front_x_fallback_wall(
+        front_wall, failure_reason = self._resolve_dual_wall_pair_front_x_fallback_wall(
             wall_pairs
         )
-        if x_wall is None:
+        if front_wall is None:
             solver_debug["fallback_failure_reason"] = failure_reason
             fallback_debug["solver_debug"] = solver_debug
             return self._make_coarse_result(
@@ -1205,10 +1205,58 @@ class PoseSolveLayer:
             )
 
         mount = self.sensor_mounts[front_beam]
-        origin_dx, _origin_dy = rotate_2d(mount.pos_x, mount.pos_y, coarse.yaw_deg)
-        dir_dx, _dir_dy = rotate_2d(mount.dir_x, mount.dir_y, coarse.yaw_deg)
-        if abs(dir_dx) <= 1e-6:
-            solver_debug["fallback_failure_reason"] = "FRONT_BEAM_PARALLEL_TO_X_WALL"
+        origin_dx, origin_dy = rotate_2d(mount.pos_x, mount.pos_y, coarse.yaw_deg)
+        dir_dx, dir_dy = rotate_2d(mount.dir_x, mount.dir_y, coarse.yaw_deg)
+        if front_wall.orientation == "vertical":
+            if abs(dir_dx) <= 1e-6:
+                solver_debug["fallback_failure_reason"] = (
+                    "FRONT_BEAM_PARALLEL_TO_FRONT_WALL_NORMAL"
+                )
+                fallback_debug["solver_debug"] = solver_debug
+                return self._make_coarse_result(
+                    coarse,
+                    reason="DUAL_WALL_PAIR_FRONT_X_FALLBACK_UNAVAILABLE",
+                    valid_beam_count=selected_valid_beam_count,
+                    prior_age_ms=prior_age_ms,
+                    usable_sensor_count=usable_sensor_count,
+                    selected_beam_count=selected_beam_count,
+                    selected_valid_beam_count=selected_valid_beam_count,
+                    debug=fallback_debug,
+                    region_name=region_name,
+                    beam_mode=beam_mode,
+                    selected_beams=selected_beams,
+                )
+            x_map = float(front_wall.const_value) - origin_dx - float(front_range) * dir_dx
+            y_map = coarse.y
+            delta_x = x_map - coarse.x
+            delta_y = 0.0
+            solved_axis = "x"
+        elif front_wall.orientation == "horizontal":
+            if abs(dir_dy) <= 1e-6:
+                solver_debug["fallback_failure_reason"] = (
+                    "FRONT_BEAM_PARALLEL_TO_FRONT_WALL_NORMAL"
+                )
+                fallback_debug["solver_debug"] = solver_debug
+                return self._make_coarse_result(
+                    coarse,
+                    reason="DUAL_WALL_PAIR_FRONT_X_FALLBACK_UNAVAILABLE",
+                    valid_beam_count=selected_valid_beam_count,
+                    prior_age_ms=prior_age_ms,
+                    usable_sensor_count=usable_sensor_count,
+                    selected_beam_count=selected_beam_count,
+                    selected_valid_beam_count=selected_valid_beam_count,
+                    debug=fallback_debug,
+                    region_name=region_name,
+                    beam_mode=beam_mode,
+                    selected_beams=selected_beams,
+                )
+            x_map = coarse.x
+            y_map = float(front_wall.const_value) - origin_dy - float(front_range) * dir_dy
+            delta_x = 0.0
+            delta_y = y_map - coarse.y
+            solved_axis = "y"
+        else:
+            solver_debug["fallback_failure_reason"] = "FRONT_WALL_IS_NOT_AXIS_ALIGNED"
             fallback_debug["solver_debug"] = solver_debug
             return self._make_coarse_result(
                 coarse,
@@ -1223,22 +1271,19 @@ class PoseSolveLayer:
                 beam_mode=beam_mode,
                 selected_beams=selected_beams,
             )
-
-        x_map = float(x_wall.const_value) - origin_dx - float(front_range) * dir_dx
-        delta_x = x_map - coarse.x
         max_correction_xy_m = float(solver_cfg.get("max_correction_xy_m", 0.15))
         max_correction_yaw_deg = float(solver_cfg.get("max_correction_yaw_deg", 10.0))
         fallback_debug = self._with_solver_debug(
             fallback_debug,
             candidate_pose={
                 "x": x_map,
-                "y": coarse.y,
+                "y": y_map,
                 "yaw_deg": coarse.yaw_deg,
             },
             correction_debug={
                 "delta_x_m": delta_x,
-                "delta_y_m": 0.0,
-                "delta_xy_norm_m": abs(delta_x),
+                "delta_y_m": delta_y,
+                "delta_xy_norm_m": math.hypot(delta_x, delta_y),
                 "delta_yaw_deg": 0.0,
                 "max_correction_xy_m": max_correction_xy_m,
                 "max_correction_yaw_deg": max_correction_yaw_deg,
@@ -1247,11 +1292,21 @@ class PoseSolveLayer:
         solver_debug = dict(fallback_debug.get("solver_debug", {}))
         solver_debug.update(
             {
-                "front_wall_name": x_wall.name,
-                "front_wall_const_x_m": self._debug_float(x_wall.const_value),
+                "front_wall_name": front_wall.name,
+                "front_wall_orientation": front_wall.orientation,
+                "front_wall_const_value_m": self._debug_float(front_wall.const_value),
                 "front_beam_range_m": self._debug_float(float(front_range)),
+                "fallback_solved_axis": solved_axis,
             }
         )
+        if front_wall.orientation == "vertical":
+            solver_debug["front_wall_const_x_m"] = self._debug_float(
+                front_wall.const_value
+            )
+        else:
+            solver_debug["front_wall_const_y_m"] = self._debug_float(
+                front_wall.const_value
+            )
         fallback_debug["solver_debug"] = solver_debug
         return self._make_result(
             state=STATE_REFINED,
@@ -1259,7 +1314,7 @@ class PoseSolveLayer:
             pose_source="front_laser_x_with_lidar_yaw",
             localized=True,
             x=x_map,
-            y=coarse.y,
+            y=y_map,
             yaw_deg=coarse.yaw_deg,
             valid_beam_count=selected_valid_beam_count,
             prior_age_ms=prior_age_ms,
@@ -1287,12 +1342,14 @@ class PoseSolveLayer:
             x_wall = self.walls.get(wall_pair.x_wall_name)
             if x_wall is None:
                 return None, "X_WALL_MISSING"
-            if x_wall.orientation != "vertical":
-                return None, "X_WALL_IS_NOT_VERTICAL"
+            if x_wall.orientation not in {"vertical", "horizontal"}:
+                return None, "X_WALL_IS_NOT_AXIS_ALIGNED"
             x_walls.append(x_wall)
 
         ref_wall = x_walls[0]
         for x_wall in x_walls[1:]:
+            if x_wall.orientation != ref_wall.orientation:
+                return None, "X_WALLS_NOT_ALIGNED"
             if not math.isclose(
                 float(x_wall.const_value),
                 float(ref_wall.const_value),
