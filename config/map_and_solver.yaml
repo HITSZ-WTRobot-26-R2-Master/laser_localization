@@ -4,6 +4,9 @@
 # Optional: each region may define range_offsets_m in meters, keyed by sensor
 # name, to add/subtract a fixed value from selected laser ranges. Omitted
 # sensors default to 0.0 offset.
+# Optional: each region may define xy_yaw_source as side_laser or lidar.
+# Default is side_laser. The selected yaw is used for both solved yaw output
+# and the X/Y projection step in closed-form and compensated front-side solvers.
 
 ## 注：regions可以选择使用圆形区域或矩形区域
 ## 圆形区域：需要有x，y和max_lidar_distance_to_center_m参数（都是值）
@@ -2328,6 +2331,7 @@ scene_profiles:
           y_range: [-4.0, -0.135]
           yaw_deg: 90.0
           active_wall_pairs: [red_final_region_left_yaw90, red_final_region_right_yaw90]
+          xy_yaw_source: lidar
           priority: 100
 
         - name: red_final_yaw-90
@@ -2335,6 +2339,7 @@ scene_profiles:
           y_range: [-4.0, -0.135]
           yaw_deg: -90.0
           active_wall_pairs: [red_final_region_left_yaw-90, red_final_region_right_yaw-90]
+          xy_yaw_source: lidar
           priority: 100
 
     solver:

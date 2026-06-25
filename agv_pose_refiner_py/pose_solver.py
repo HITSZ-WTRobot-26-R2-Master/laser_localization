@@ -123,6 +123,7 @@ class PoseSolveLayer:
                     wall_pair=region_match.wall_pairs[0],
                     solver_cfg=solver_cfg,
                     special_solver_cfg=special_solver_cfg,
+                    region_cfg=region_cfg,
                     prior_age_ms=prior_age_ms,
                     region_name=region_match.name,
                     usable_sensor_count=usable_sensor_count,
@@ -147,6 +148,7 @@ class PoseSolveLayer:
                 range_frame=range_frame,
                 wall_pair=region_match.wall_pairs[0],
                 solver_cfg=solver_cfg,
+                region_cfg=region_cfg,
                 prior_age_ms=prior_age_ms,
                 region_name=region_match.name,
                 usable_sensor_count=usable_sensor_count,
@@ -157,6 +159,7 @@ class PoseSolveLayer:
             range_frame=range_frame,
             wall_pairs=region_match.wall_pairs,
             solver_cfg=solver_cfg,
+            region_cfg=region_cfg,
             prior_age_ms=prior_age_ms,
             region_name=region_match.name,
             usable_sensor_count=usable_sensor_count,
@@ -351,6 +354,14 @@ class PoseSolveLayer:
                         f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
                         "cannot define yaw_tolerance_deg without yaw_deg"
                     )
+                raw_xy_yaw_source = region.get("xy_yaw_source")
+                if raw_xy_yaw_source is not None:
+                    xy_yaw_source = self._region_xy_yaw_source(region)
+                    if xy_yaw_source not in {"side_laser", "lidar"}:
+                        raise RuntimeError(
+                            f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                            "xy_yaw_source must be side_laser or lidar"
+                        )
                 if "max_lidar_distance_to_center_m" in region:
                     max_distance_m = float(region["max_lidar_distance_to_center_m"])
                     if max_distance_m < 0.0:
@@ -409,6 +420,14 @@ class PoseSolveLayer:
                                 "special_solver.theta_tolerance_deg must be > 0"
                             )
                     else:
+                        if (
+                            raw_xy_yaw_source is not None
+                            and self._region_xy_yaw_source(region) != "lidar"
+                        ):
+                            raise RuntimeError(
+                                f"scene_profiles.{scene_name}.wall_selector.regions[{index}] "
+                                "projected_xy_with_lidar_yaw regions must not set xy_yaw_source to side_laser"
+                            )
                         solve_axes = self._projected_xy_solve_axes(special_solver_cfg)
                         if not solve_axes:
                             raise RuntimeError(
@@ -505,6 +524,31 @@ class PoseSolveLayer:
         if solver_type is None:
             return None
         return str(solver_type)
+
+    def _region_xy_yaw_source(self, region: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(region, dict):
+            return "side_laser"
+        raw_source = region.get("xy_yaw_source")
+        if raw_source is None and self._special_solver_type(region) == "projected_xy_with_lidar_yaw":
+            return "lidar"
+        return str(region.get("xy_yaw_source", "side_laser")).strip().lower()
+
+    def _resolve_xy_projection_yaw(
+        self,
+        *,
+        coarse_yaw_deg: float,
+        wall_pair: WallPair,
+        side_laser_yaw_corner_deg: float,
+        region_cfg: Optional[Dict[str, Any]],
+    ) -> Tuple[str, float, float]:
+        lidar_yaw_corner_deg = wrap_deg(coarse_yaw_deg - wall_pair.corner_yaw_deg)
+        xy_yaw_source = self._region_xy_yaw_source(region_cfg)
+        xy_projection_yaw_corner_deg = (
+            lidar_yaw_corner_deg
+            if xy_yaw_source == "lidar"
+            else side_laser_yaw_corner_deg
+        )
+        return xy_yaw_source, lidar_yaw_corner_deg, xy_projection_yaw_corner_deg
 
     def _is_finite_pose(self, coarse: CoarsePose) -> bool:
         return (
@@ -615,6 +659,7 @@ class PoseSolveLayer:
             "matched_wall_pair_name": pair_names[0] if len(pair_names) == 1 else None,
             "matched_wall_pair_names": pair_names,
             "matched_special_solver_type": self._special_solver_type(best_region),
+            "matched_xy_yaw_source": self._region_xy_yaw_source(best_region),
             "candidate_count": len(candidate_debug),
             "candidates": candidate_debug,
         }
@@ -636,6 +681,7 @@ class PoseSolveLayer:
             "yaw_match": yaw_match,
             "matched": False,
             "active_wall_pair_names": self._region_wall_pair_names(region),
+            "xy_yaw_source": self._region_xy_yaw_source(region),
             "position_score_m": self._debug_float(position_score),
             "yaw_error_deg": self._debug_float(yaw_error_deg),
             "expected_yaw_deg": (
@@ -902,6 +948,7 @@ class PoseSolveLayer:
         range_frame: RangeFrame,
         wall_pairs: List[WallPair],
         solver_cfg: Dict[str, Any],
+        region_cfg: Optional[Dict[str, Any]],
         prior_age_ms: float,
         region_name: Optional[str] = None,
         usable_sensor_count: int = 0,
@@ -913,6 +960,7 @@ class PoseSolveLayer:
                 range_frame=range_frame,
                 wall_pair=wall_pair,
                 solver_cfg=solver_cfg,
+                region_cfg=region_cfg,
                 prior_age_ms=prior_age_ms,
                 region_name=region_name,
                 usable_sensor_count=usable_sensor_count,
@@ -1364,6 +1412,7 @@ class PoseSolveLayer:
         range_frame: RangeFrame,
         wall_pair: WallPair,
         solver_cfg: Dict[str, Any],
+        region_cfg: Optional[Dict[str, Any]],
         prior_age_ms: float,
         region_name: Optional[str] = None,
         usable_sensor_count: int = 0,
@@ -1400,6 +1449,16 @@ class PoseSolveLayer:
         theta_side_deg = math.degrees(math.atan2(r_sf - r_sr, x_pair))
         if beam_selection.side_beam_role == "left":
             theta_side_deg = -theta_side_deg
+        (
+            xy_yaw_source,
+            lidar_yaw_corner_deg,
+            xy_projection_yaw_corner_deg,
+        ) = self._resolve_xy_projection_yaw(
+            coarse_yaw_deg=coarse.yaw_deg,
+            wall_pair=wall_pair,
+            side_laser_yaw_corner_deg=theta_side_deg,
+            region_cfg=region_cfg,
+        )
 
         max_theta_abs_deg = float(solver_cfg.get("max_theta_abs_deg", 45.0))
         debug = self._with_solver_debug(
@@ -1407,7 +1466,14 @@ class PoseSolveLayer:
             beam_selection=beam_selection,
             theta_side_deg=theta_side_deg,
         )
-        if abs(theta_side_deg) > max_theta_abs_deg:
+        debug = self._with_xy_yaw_debug(
+            debug,
+            xy_yaw_source=xy_yaw_source,
+            side_laser_yaw_in_corner_deg=theta_side_deg,
+            lidar_yaw_in_corner_deg=lidar_yaw_corner_deg,
+            xy_projection_yaw_in_corner_deg=xy_projection_yaw_corner_deg,
+        )
+        if abs(xy_projection_yaw_corner_deg) > max_theta_abs_deg:
             return self._make_coarse_result(
                 coarse,
                 reason="THETA_EXCEEDS_LIMIT",
@@ -1424,7 +1490,7 @@ class PoseSolveLayer:
                 yaw_in_corner_deg=beam_selection.yaw_in_corner_deg,
             )
 
-        c = math.cos(math.radians(theta_side_deg))
+        c = math.cos(math.radians(xy_projection_yaw_corner_deg))
         sx = -1.0 if beam_selection.x_beam_role == "front" else 1.0
         sy = 1.0 if beam_selection.side_beam_role == "right" else -1.0
         d_x = beam_selection.x_offset_m
@@ -1432,7 +1498,7 @@ class PoseSolveLayer:
 
         x_corner = sx * (r_x + d_x) * c
         y_corner = sy * (d_y + 0.5 * (r_sf + r_sr)) * c
-        yaw_corner_deg = theta_side_deg
+        yaw_corner_deg = xy_projection_yaw_corner_deg
 
         # The closed-form solver produces pose in the corner-local frame first.
         # Rotate and translate it with the configured corner world pose.
@@ -1573,6 +1639,7 @@ class PoseSolveLayer:
         wall_pair: WallPair,
         solver_cfg: Dict[str, Any],
         special_solver_cfg: Dict[str, Any],
+        region_cfg: Optional[Dict[str, Any]],
         prior_age_ms: float,
         region_name: Optional[str] = None,
         usable_sensor_count: int = 0,
@@ -1590,6 +1657,8 @@ class PoseSolveLayer:
         theta_tolerance_deg = float(
             special_solver_cfg.get("theta_tolerance_deg", 0.01)
         )
+        lidar_yaw_corner_deg = beam_selection.yaw_in_corner_deg
+        xy_yaw_source = self._region_xy_yaw_source(region_cfg)
 
         debug = self._with_solver_debug(debug, beam_selection=beam_selection)
         debug = self._with_special_solver_debug(
@@ -1648,21 +1717,41 @@ class PoseSolveLayer:
             pair_spacing_m=beam_selection.pair_spacing_m,
             side_beam_role=beam_selection.side_beam_role,
         )
-        (
-            theta_side_deg,
-            corrected_side_front_range,
-            theta_iterations,
-            theta_converged,
-            theta_failure_reason,
-        ) = self._iterate_compensated_theta(
-            side_beam_role=beam_selection.side_beam_role,
-            side_front_range=side_front_range,
-            side_rear_range=side_rear_range,
-            pair_spacing_m=beam_selection.pair_spacing_m,
-            compensation_x0_m=compensation_x0_m,
-            theta_seed_deg=beam_selection.yaw_in_corner_deg,
-            max_iterations=max_iterations,
-            theta_tolerance_deg=theta_tolerance_deg,
+        theta_side_deg: Optional[float]
+        corrected_side_front_range: Optional[float]
+        theta_iterations: int
+        theta_converged: Optional[bool]
+        theta_failure_reason: Optional[str]
+        if xy_yaw_source == "lidar":
+            theta_side_deg = None
+            theta_iterations = 0
+            corrected_side_front_range, theta_failure_reason = (
+                self._compensate_side_front_range_for_yaw(
+                    side_front_range=side_front_range,
+                    compensation_x0_m=compensation_x0_m,
+                    yaw_corner_deg=lidar_yaw_corner_deg,
+                )
+            )
+            theta_converged = theta_failure_reason is None
+        else:
+            (
+                theta_side_deg,
+                corrected_side_front_range,
+                theta_iterations,
+                theta_converged,
+                theta_failure_reason,
+            ) = self._iterate_compensated_theta(
+                side_beam_role=beam_selection.side_beam_role,
+                side_front_range=side_front_range,
+                side_rear_range=side_rear_range,
+                pair_spacing_m=beam_selection.pair_spacing_m,
+                compensation_x0_m=compensation_x0_m,
+                theta_seed_deg=beam_selection.yaw_in_corner_deg,
+                max_iterations=max_iterations,
+                theta_tolerance_deg=theta_tolerance_deg,
+            )
+        xy_projection_yaw_corner_deg = (
+            lidar_yaw_corner_deg if xy_yaw_source == "lidar" else theta_side_deg
         )
         debug = self._with_special_solver_debug(
             debug,
@@ -1671,7 +1760,14 @@ class PoseSolveLayer:
             corrected_side_front_range_m=corrected_side_front_range,
             failure_reason=theta_failure_reason,
         )
-        if theta_side_deg is None or corrected_side_front_range is None:
+        debug = self._with_xy_yaw_debug(
+            debug,
+            xy_yaw_source=xy_yaw_source,
+            side_laser_yaw_in_corner_deg=theta_side_deg,
+            lidar_yaw_in_corner_deg=lidar_yaw_corner_deg,
+            xy_projection_yaw_in_corner_deg=xy_projection_yaw_corner_deg,
+        )
+        if xy_projection_yaw_corner_deg is None or corrected_side_front_range is None:
             return self._make_coarse_result(
                 coarse,
                 reason="SPECIAL_SOLVER_THETA_FAILED",
@@ -1694,7 +1790,7 @@ class PoseSolveLayer:
             beam_selection=beam_selection,
             theta_side_deg=theta_side_deg,
         )
-        if abs(theta_side_deg) > max_theta_abs_deg:
+        if abs(xy_projection_yaw_corner_deg) > max_theta_abs_deg:
             return self._make_coarse_result(
                 coarse,
                 reason="THETA_EXCEEDS_LIMIT",
@@ -1711,7 +1807,7 @@ class PoseSolveLayer:
                 yaw_in_corner_deg=beam_selection.yaw_in_corner_deg,
             )
 
-        c = math.cos(math.radians(theta_side_deg))
+        c = math.cos(math.radians(xy_projection_yaw_corner_deg))
         if abs(c) <= 1e-6:
             debug = self._with_special_solver_debug(
                 debug,
@@ -1740,7 +1836,7 @@ class PoseSolveLayer:
 
         x_corner = sx * (front_range + d_x) * c
         y_corner = sy * (d_y + 0.5 * (corrected_side_front_range + side_rear_range)) * c
-        yaw_corner_deg = theta_side_deg
+        yaw_corner_deg = xy_projection_yaw_corner_deg
 
         x_map, y_map, yaw_map_deg = transform_pose_2d(
             wall_pair.corner_x,
@@ -1941,6 +2037,13 @@ class PoseSolveLayer:
             x_wall_role=wall_pair.x_wall_role,
             side_wall_role=wall_pair.side_wall_role,
             yaw_in_corner_deg=yaw_corner_deg,
+        )
+        debug = self._with_xy_yaw_debug(
+            debug,
+            xy_yaw_source="lidar",
+            side_laser_yaw_in_corner_deg=None,
+            lidar_yaw_in_corner_deg=yaw_corner_deg,
+            xy_projection_yaw_in_corner_deg=yaw_corner_deg,
         )
 
         x_corner = coarse_corner_x
@@ -2249,6 +2352,23 @@ class PoseSolveLayer:
         corrected_side_front_range = float(side_front_range) + compensation_x0_m / cos_theta
         return theta_deg, corrected_side_front_range, iterations_used, converged, None
 
+    def _compensate_side_front_range_for_yaw(
+        self,
+        *,
+        side_front_range: float,
+        compensation_x0_m: float,
+        yaw_corner_deg: float,
+    ) -> Tuple[Optional[float], Optional[str]]:
+        cos_theta = math.cos(math.radians(yaw_corner_deg))
+        if abs(cos_theta) <= 1e-6:
+            return None, "THETA_COMPENSATION_SINGULAR"
+        corrected_side_front_range = (
+            float(side_front_range) + compensation_x0_m / cos_theta
+        )
+        if not math.isfinite(corrected_side_front_range):
+            return None, "CORRECTED_SIDE_FRONT_RANGE_NON_FINITE"
+        return corrected_side_front_range, None
+
     def _theta_numerator_for_side_beam(
         self,
         *,
@@ -2276,6 +2396,30 @@ class PoseSolveLayer:
             else:
                 special_solver_debug[key] = self._debug_float(float(value))
         solver_debug["special_solver_debug"] = special_solver_debug
+        merged["solver_debug"] = solver_debug
+        return merged
+
+    def _with_xy_yaw_debug(
+        self,
+        debug: Optional[Dict[str, Any]],
+        *,
+        xy_yaw_source: str,
+        side_laser_yaw_in_corner_deg: Optional[float],
+        lidar_yaw_in_corner_deg: Optional[float],
+        xy_projection_yaw_in_corner_deg: Optional[float],
+    ) -> Dict[str, Any]:
+        merged = dict(debug or {})
+        solver_debug = dict(merged.get("solver_debug", {}))
+        solver_debug["xy_yaw_source"] = xy_yaw_source
+        solver_debug["side_laser_yaw_in_corner_deg"] = self._debug_float(
+            side_laser_yaw_in_corner_deg
+        )
+        solver_debug["lidar_yaw_in_corner_deg"] = self._debug_float(
+            lidar_yaw_in_corner_deg
+        )
+        solver_debug["xy_projection_yaw_in_corner_deg"] = self._debug_float(
+            xy_projection_yaw_in_corner_deg
+        )
         merged["solver_debug"] = solver_debug
         return merged
 
