@@ -831,6 +831,10 @@ class PoseSolveLayer:
         beam_mode: Optional[str] = None,
         selected_beams: Optional[List[str]] = None,
         yaw_in_corner_deg: Optional[float] = None,
+        publish_x: Optional[float] = None,
+        publish_y: Optional[float] = None,
+        publish_z: Optional[float] = None,
+        publish_yaw_deg: Optional[float] = None,
     ) -> SolveResult:
         return SolveResult(
             state=state,
@@ -854,6 +858,10 @@ class PoseSolveLayer:
             beam_mode=beam_mode,
             selected_beams=selected_beams,
             yaw_in_corner_deg=yaw_in_corner_deg,
+            publish_x=publish_x,
+            publish_y=publish_y,
+            publish_z=publish_z,
+            publish_yaw_deg=publish_yaw_deg,
         )
 
     def _make_coarse_result(
@@ -895,7 +903,39 @@ class PoseSolveLayer:
             beam_mode=beam_mode,
             selected_beams=selected_beams,
             yaw_in_corner_deg=yaw_in_corner_deg,
+            publish_x=None,
+            publish_y=None,
+            publish_z=None,
+            publish_yaw_deg=None,
         )
+
+    def _full_pose_publish_fields(
+        self,
+        coarse: CoarsePose,
+        *,
+        x: float,
+        y: float,
+        yaw_deg: Optional[float],
+    ) -> Dict[str, Optional[float]]:
+        return {
+            "publish_x": x,
+            "publish_y": y,
+            "publish_z": coarse.z,
+            "publish_yaw_deg": yaw_deg,
+        }
+
+    def _single_axis_publish_fields(
+        self,
+        *,
+        x: Optional[float] = None,
+        y: Optional[float] = None,
+    ) -> Dict[str, Optional[float]]:
+        return {
+            "publish_x": x,
+            "publish_y": y,
+            "publish_z": None,
+            "publish_yaw_deg": None,
+        }
 
     def _make_solver_candidate_result(
         self,
@@ -1374,6 +1414,10 @@ class PoseSolveLayer:
             region_name=region_name,
             beam_mode=beam_mode,
             selected_beams=selected_beams,
+            **self._single_axis_publish_fields(
+                x=x_map if solved_axis == "x" else None,
+                y=y_map if solved_axis == "y" else None,
+            ),
         )
 
     def _resolve_dual_wall_pair_front_x_fallback_wall(
@@ -1630,6 +1674,12 @@ class PoseSolveLayer:
             beam_mode=beam_selection.beam_mode,
             selected_beams=selected_beams,
             yaw_in_corner_deg=yaw_corner_deg,
+            **self._full_pose_publish_fields(
+                coarse,
+                x=x_map,
+                y=y_map,
+                yaw_deg=yaw_map_deg if xy_yaw_source != "lidar" else None,
+            ),
         )
 
     def _solve_compensated_front_side_region(
@@ -1973,6 +2023,12 @@ class PoseSolveLayer:
             beam_mode=beam_selection.beam_mode,
             selected_beams=selected_beams,
             yaw_in_corner_deg=yaw_corner_deg,
+            **self._full_pose_publish_fields(
+                coarse,
+                x=x_map,
+                y=y_map,
+                yaw_deg=yaw_map_deg if xy_yaw_source != "lidar" else None,
+            ),
         )
 
     def _solve_projected_xy_with_lidar_yaw(
@@ -2273,6 +2329,18 @@ class PoseSolveLayer:
                 ),
             },
         )
+        if len(solve_axes) == 1:
+            publish_fields = self._single_axis_publish_fields(
+                x=x_map if solve_axes[0] == "x" else None,
+                y=y_map if solve_axes[0] == "y" else None,
+            )
+        else:
+            publish_fields = self._full_pose_publish_fields(
+                coarse,
+                x=x_map,
+                y=y_map,
+                yaw_deg=None,
+            )
         return self._make_result(
             state=STATE_REFINED,
             reason="OK",
@@ -2295,6 +2363,7 @@ class PoseSolveLayer:
             beam_mode="projected_xy_with_lidar_yaw",
             selected_beams=selected_beams,
             yaw_in_corner_deg=yaw_corner_deg,
+            **publish_fields,
         )
 
     def _iterate_compensated_theta(

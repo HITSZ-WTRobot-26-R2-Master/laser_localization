@@ -7,6 +7,9 @@ import types
 def install_test_stubs() -> None:
     _install_ament_stubs()
     _install_rclpy_stubs()
+    _install_geometry_msgs_stubs()
+    _install_std_msgs_stubs()
+    _install_tf2_ros_stubs()
 
 
 def _install_ament_stubs() -> None:
@@ -50,3 +53,78 @@ def _install_rclpy_stubs() -> None:
     root_module.time = time_module
     sys.modules["rclpy"] = root_module
     sys.modules["rclpy.time"] = time_module
+
+
+def _install_geometry_msgs_stubs() -> None:
+    if "geometry_msgs.msg" in sys.modules:
+        return
+    geometry_msgs_msg_module = types.ModuleType("geometry_msgs.msg")
+
+    class _Header:
+        def __init__(self) -> None:
+            self.frame_id = ""
+            self.stamp = None
+
+    class _Vector3:
+        def __init__(self) -> None:
+            self.x = 0.0
+            self.y = 0.0
+            self.z = 0.0
+
+    class _Quaternion:
+        def __init__(self) -> None:
+            self.x = 0.0
+            self.y = 0.0
+            self.z = 0.0
+            self.w = 1.0
+
+    class _Transform:
+        def __init__(self) -> None:
+            self.translation = _Vector3()
+            self.rotation = _Quaternion()
+
+    class TransformStamped:
+        def __init__(self) -> None:
+            self.header = _Header()
+            self.child_frame_id = ""
+            self.transform = _Transform()
+
+    geometry_msgs_msg_module.TransformStamped = TransformStamped
+
+    geometry_msgs_module = types.ModuleType("geometry_msgs")
+    geometry_msgs_module.msg = geometry_msgs_msg_module
+    sys.modules["geometry_msgs"] = geometry_msgs_module
+    sys.modules["geometry_msgs.msg"] = geometry_msgs_msg_module
+
+
+def _install_std_msgs_stubs() -> None:
+    if "std_msgs.msg" in sys.modules:
+        return
+    std_msgs_msg_module = types.ModuleType("std_msgs.msg")
+
+    class String:
+        def __init__(self) -> None:
+            self.data = ""
+
+    std_msgs_msg_module.String = String
+
+    std_msgs_module = types.ModuleType("std_msgs")
+    std_msgs_module.msg = std_msgs_msg_module
+    sys.modules["std_msgs"] = std_msgs_module
+    sys.modules["std_msgs.msg"] = std_msgs_msg_module
+
+
+def _install_tf2_ros_stubs() -> None:
+    if "tf2_ros" in sys.modules:
+        return
+    tf2_ros_module = types.ModuleType("tf2_ros")
+
+    class TransformBroadcaster:
+        def __init__(self, _node: object) -> None:
+            self.transforms = []
+
+        def sendTransform(self, transform: object) -> None:
+            self.transforms.append(transform)
+
+    tf2_ros_module.TransformBroadcaster = TransformBroadcaster
+    sys.modules["tf2_ros"] = tf2_ros_module

@@ -137,6 +137,10 @@ class SolveResult:
     beam_mode: Optional[str] = None
     selected_beams: Optional[List[str]] = None
     yaw_in_corner_deg: Optional[float] = None
+    publish_x: Optional[float] = None
+    publish_y: Optional[float] = None
+    publish_z: Optional[float] = None
+    publish_yaw_deg: Optional[float] = None
 
 
 @dataclass

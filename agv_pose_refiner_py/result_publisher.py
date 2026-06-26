@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from geometry_msgs.msg import TransformStamped
 from std_msgs.msg import String
@@ -44,19 +44,21 @@ class ResultPublishLayer:
         result: SolveResult,
         laser_snapshot: Optional[Dict[str, Any]] = None,
     ) -> None:
-        pose_output_valid = self._should_publish_pose(result)
+        pose_output_fields = self._output_valid_fields(result)
+        pose_output_valid = bool(pose_output_fields)
+        pose_output_complete = self._should_publish_tf(result)
         pose_msg = self._build_output_pose_msg(coarse, result)
         self._pose_pub.publish(pose_msg)
 
-        if self._publish_tf and result.state == STATE_REFINED:
+        if self._publish_tf and self._should_publish_tf(result):
             qx, qy, qz, qw = self._result_quaternion_components(coarse, result)
             tf_msg = TransformStamped()
             tf_msg.header.frame_id = self._tf_parent_frame
             tf_msg.header.stamp = coarse.stamp.to_msg()
             tf_msg.child_frame_id = self._tf_child_frame
-            tf_msg.transform.translation.x = float(result.x)
-            tf_msg.transform.translation.y = float(result.y)
-            tf_msg.transform.translation.z = float(coarse.z)
+            tf_msg.transform.translation.x = float(result.publish_x)
+            tf_msg.transform.translation.y = float(result.publish_y)
+            tf_msg.transform.translation.z = float(result.publish_z)
             tf_msg.transform.rotation.x = qx
             tf_msg.transform.rotation.y = qy
             tf_msg.transform.rotation.z = qz
@@ -93,15 +95,17 @@ class ResultPublishLayer:
         solve_success = result.state == STATE_REFINED
         current_solver_beams = list(result.selected_beams or [])
         solver_debug = dict(debug.get("solver_debug", {}))
-        solver_debug.update({
-            "attempted": solve_attempted,
-            "success": solve_success,
-            "current_solver_beams": current_solver_beams,
-            "selected_beam_count": result.selected_beam_count,
-            "selected_valid_beam_count": result.selected_valid_beam_count,
-            "target_hit_count": result.target_hit_count,
-            "usable_sensor_count": result.usable_sensor_count,
-        })
+        solver_debug.update(
+            {
+                "attempted": solve_attempted,
+                "success": solve_success,
+                "current_solver_beams": current_solver_beams,
+                "selected_beam_count": result.selected_beam_count,
+                "selected_valid_beam_count": result.selected_valid_beam_count,
+                "target_hit_count": result.target_hit_count,
+                "usable_sensor_count": result.usable_sensor_count,
+            }
+        )
         if result.beam_mode is not None:
             solver_debug["beam_mode"] = result.beam_mode
         corner_pose = self._extract_pose_debug(solver_debug.get("corner_pose"))
@@ -121,12 +125,13 @@ class ResultPublishLayer:
             "state": result.state,
             "pose_source": result.pose_source,
             "laser_pose_output": "POSE" if pose_output_valid else "NAN",
-            "laser_pose_output_reason": (
-                "OK" if pose_output_valid else result.reason
-            ),
+            "laser_pose_output_fields": pose_output_fields,
+            "laser_pose_output_complete": pose_output_complete,
+            "laser_pose_output_reason": ("OK" if pose_output_valid else result.reason),
             "laser_pose_output_reason_text": self._laser_pose_output_reason_text(
                 result.reason,
                 pose_output_valid,
+                pose_output_complete,
             ),
             "in_solve_region": in_solve_region,
             "solve_attempted": solve_attempted,
@@ -189,11 +194,12 @@ class ResultPublishLayer:
             pose_msg.source = "laser"
         if hasattr(pose_msg, "string"):
             pose_msg.string = "laser"
-        if self._should_publish_pose(result):
+
+        pose_msg.x = self._output_float_or_nan(result.publish_x)
+        pose_msg.y = self._output_float_or_nan(result.publish_y)
+        pose_msg.z = self._output_float_or_nan(result.publish_z)
+        if self._has_finite_output_yaw(result):
             qx, qy, qz, qw = self._result_quaternion_components(coarse, result)
-            pose_msg.x = float(result.x)
-            pose_msg.y = float(result.y)
-            pose_msg.z = float(coarse.z)
             pose_msg.qx = qx
             pose_msg.qy = qy
             pose_msg.qz = qz
@@ -201,17 +207,52 @@ class ResultPublishLayer:
             return pose_msg
 
         nan = float("nan")
-        pose_msg.x = nan
-        pose_msg.y = nan
-        pose_msg.z = nan
         pose_msg.qx = nan
         pose_msg.qy = nan
         pose_msg.qz = nan
         pose_msg.qw = nan
         return pose_msg
 
-    def _should_publish_pose(self, result: SolveResult) -> bool:
-        return result.state == STATE_REFINED and self._has_finite_pose(result)
+    def _should_publish_tf(self, result: SolveResult) -> bool:
+        return result.state == STATE_REFINED and self._has_finite_output_tf_pose(result)
+
+    def _has_finite_output_tf_pose(self, result: SolveResult) -> bool:
+        return (
+            self._finite_output_value(result.publish_x) is not None
+            and self._finite_output_value(result.publish_y) is not None
+            and self._finite_output_value(result.publish_z) is not None
+            and self._has_finite_output_yaw(result)
+        )
+
+    def _has_finite_output_yaw(self, result: SolveResult) -> bool:
+        return self._finite_output_value(result.publish_yaw_deg) is not None
+
+    def _output_valid_fields(self, result: SolveResult) -> List[str]:
+        fields: List[str] = []
+        for key, value in (
+            ("x", result.publish_x),
+            ("y", result.publish_y),
+            ("z", result.publish_z),
+        ):
+            if self._finite_output_value(value) is not None:
+                fields.append(key)
+        if self._has_finite_output_yaw(result):
+            fields.extend(["qx", "qy", "qz", "qw"])
+        return fields
+
+    def _finite_output_value(self, value: Optional[float]) -> Optional[float]:
+        if value is None:
+            return None
+        value_float = float(value)
+        if not math.isfinite(value_float):
+            return None
+        return value_float
+
+    def _output_float_or_nan(self, value: Optional[float]) -> float:
+        finite_value = self._finite_output_value(value)
+        if finite_value is None:
+            return float("nan")
+        return finite_value
 
     def _has_finite_pose(self, result: SolveResult) -> bool:
         return (
@@ -241,17 +282,20 @@ class ResultPublishLayer:
         self,
         reason_code: str,
         pose_output_valid: bool,
+        pose_output_complete: bool,
     ) -> str:
         if pose_output_valid:
-            return "laser解算成功，/laser_pose发布有效位姿"
+            if not pose_output_complete:
+                return "laser solve succeeded; /laser_pose contains only valid solved fields"
+            return "laser solve succeeded; /laser_pose contains a complete pose"
 
         reason_text_by_code = {
-            "NON_FINITE_LIDAR_POSE": "输入lidar位姿存在NaN或Inf，无法进行laser解算",
-            "NO_SERIAL_RANGE_AVAILABLE": "当前没有可用的激光测距帧",
-            "NO_REGION_MATCHED": "当前粗定位不在已配置的laser解算区域内",
-            "INSUFFICIENT_VALID_BEAMS": "参与角点解算的有效激光束数量不足",
-            "THETA_EXCEEDS_LIMIT": "侧向双束推算出的夹角超出允许范围",
-            "RESIDUAL_TOO_LARGE": "解算残差过大，或命中目标墙数量不足",
+            "NON_FINITE_LIDAR_POSE": "input lidar pose contains NaN or Inf",
+            "NO_SERIAL_RANGE_AVAILABLE": "no serial range frame is available",
+            "NO_REGION_MATCHED": "coarse lidar pose is outside all configured solve regions",
+            "INSUFFICIENT_VALID_BEAMS": "not enough valid beams for solving",
+            "THETA_EXCEEDS_LIMIT": "solved yaw exceeds configured limit",
+            "RESIDUAL_TOO_LARGE": "residual is too large",
         }
         return reason_text_by_code.get(reason_code, reason_code)
 
@@ -261,5 +305,5 @@ class ResultPublishLayer:
         return quaternion_components_from_rpy(
             coarse.roll_rad,
             coarse.pitch_rad,
-            math.radians(float(result.yaw_deg)),
+            math.radians(float(result.publish_yaw_deg)),
         )
