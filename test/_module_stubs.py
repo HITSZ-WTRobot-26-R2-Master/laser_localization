@@ -36,6 +36,7 @@ def _install_rclpy_stubs() -> None:
     if "rclpy.time" in sys.modules:
         return
     time_module = types.ModuleType("rclpy.time")
+    node_module = types.ModuleType("rclpy.node")
 
     class Time:
         def __init__(self, *, nanoseconds: int = 0) -> None:
@@ -48,11 +49,19 @@ def _install_rclpy_stubs() -> None:
         def to_msg(self) -> None:
             return None
 
+    class Node:
+        pass
+
     time_module.Time = Time
+    node_module.Node = Node
     root_module = types.ModuleType("rclpy")
     root_module.time = time_module
+    root_module.node = node_module
+    root_module.ok = lambda: True
+    root_module.shutdown = lambda: None
     sys.modules["rclpy"] = root_module
     sys.modules["rclpy.time"] = time_module
+    sys.modules["rclpy.node"] = node_module
 
 
 def _install_geometry_msgs_stubs() -> None:
@@ -106,7 +115,12 @@ def _install_std_msgs_stubs() -> None:
         def __init__(self) -> None:
             self.data = ""
 
+    class UInt8:
+        def __init__(self) -> None:
+            self.data = 0
+
     std_msgs_msg_module.String = String
+    std_msgs_msg_module.UInt8 = UInt8
 
     std_msgs_module = types.ModuleType("std_msgs")
     std_msgs_module.msg = std_msgs_msg_module

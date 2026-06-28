@@ -23,6 +23,72 @@ scene_manager:
   active_scene: mode_red   ## 红方
   allow_runtime_switch: false
 
+infrared:
+  use_topic: /infrared
+  debug_topic: /infrared_debug
+  max_coarse_pose_age_ms: 500.0
+  scenes:
+    mode_red:
+      rules:
+        - x_range: [0.0, 2.0]
+          raw_bytes: [0x11, 0x22, 0x33]
+          mapped_type: spear_done_continue
+          send_to_topic: 0x01
+        - x_range: [0.0, 2.0]
+          raw_bytes: [0x01, 0x02, 0x03]
+          mapped_type: spear_done_wait
+          send_to_topic: 0x02
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x11]
+          mapped_type: grid_middle_scroll_min_x
+          send_to_topic: 0x03
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x22]
+          mapped_type: grid_middle_scroll_mid_x
+          send_to_topic: 0x04
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x33]
+          mapped_type: grid_middle_scroll_max_x
+          send_to_topic: 0x05
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x01]
+          mapped_type: r1_align_done
+          send_to_topic: 0x06
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x03]
+          mapped_type: suction_release_ready
+          send_to_topic: 0x07
+    mode_blue:
+      rules:
+        - x_range: [0.0, 2.0]
+          raw_bytes: [0x11, 0x22, 0x33]
+          mapped_type: spear_done_continue
+          send_to_topic: 0x01
+        - x_range: [0.0, 2.0]
+          raw_bytes: [0x01, 0x02, 0x03]
+          mapped_type: spear_done_wait
+          send_to_topic: 0x02
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x33]
+          mapped_type: grid_middle_scroll_min_x
+          send_to_topic: 0x03
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x22]
+          mapped_type: grid_middle_scroll_mid_x
+          send_to_topic: 0x04
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x11]
+          mapped_type: grid_middle_scroll_max_x
+          send_to_topic: 0x05
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x01]
+          mapped_type: r1_align_done
+          send_to_topic: 0x06
+        - x_range: [9.5, 12.0]
+          raw_bytes: [0x03]
+          mapped_type: suction_release_ready
+          send_to_topic: 0x07
+
 
 
 

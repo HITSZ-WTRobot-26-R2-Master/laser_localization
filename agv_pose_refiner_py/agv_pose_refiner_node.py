@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import importlib
 import math
+import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import rclpy
 import yaml
@@ -22,6 +23,8 @@ from .common import (
     resolve_query_device_ids,
     wrap_deg,
 )
+from .infrared import parse_infrared_config, resolve_infrared_query_device_ids
+from .infrared_receiver import InfraredReceiveLayer
 from .pose_solver import PoseSolveLayer
 from .result_publisher import ResultPublishLayer
 from .serial_receiver import SerialReceiveLayer
@@ -63,6 +66,13 @@ class AgvPoseRefinerNode(Node):
         self.declare_parameter("serial_expect_matching_device_id", True)
         self.declare_parameter("serial_query_device_ids", [1, 2])
 
+        # ---- Infrared serial ------------------------------------------------
+        self.declare_parameter("infrared_serial_port", "/dev/infrared_serial")
+        self.declare_parameter("infrared_serial_baudrate", 115200)
+        self.declare_parameter("infrared_serial_response_timeout_sec", 0.02)
+        self.declare_parameter("infrared_serial_poll_rate_hz", 100.0)
+        self.declare_parameter("infrared_query_device_ids", [3, 4])
+
         # ---- Solver ---------------------------------------------------------
         self.declare_parameter("world_frame_id", "map")
         self.declare_parameter("active_scene", "mode_a")
@@ -79,6 +89,40 @@ class AgvPoseRefinerNode(Node):
         sensor_map = parse_serial_sensor_map(sensors_config.get("sensor_map", {}))
         query_device_ids = resolve_query_device_ids(
             self.get_parameter("serial_query_device_ids").value, sensor_map
+        )
+        infrared_config = parse_infrared_config(solver_config)
+        infrared_runtime_config = solver_config.get("infrared", {})
+        if not isinstance(infrared_runtime_config, dict):
+            infrared_runtime_config = {}
+        infrared_query_device_ids = resolve_infrared_query_device_ids(
+            infrared_runtime_config.get(
+                "query_device_ids",
+                self.get_parameter("infrared_query_device_ids").value,
+            )
+        )
+        infrared_serial_port = str(
+            infrared_runtime_config.get(
+                "serial_port",
+                self.get_parameter("infrared_serial_port").value,
+            )
+        )
+        infrared_serial_baudrate = int(
+            infrared_runtime_config.get(
+                "serial_baudrate",
+                self.get_parameter("infrared_serial_baudrate").value,
+            )
+        )
+        infrared_serial_response_timeout_sec = float(
+            infrared_runtime_config.get(
+                "serial_response_timeout_sec",
+                self.get_parameter("infrared_serial_response_timeout_sec").value,
+            )
+        )
+        infrared_serial_poll_rate_hz = float(
+            infrared_runtime_config.get(
+                "serial_poll_rate_hz",
+                self.get_parameter("infrared_serial_poll_rate_hz").value,
+            )
         )
 
         # ---- Validate input format ------------------------------------------
@@ -125,6 +169,18 @@ class AgvPoseRefinerNode(Node):
                 "serial_expect_matching_device_id"
             ).value,
         )
+        self._latest_coarse_pose_lock = threading.Lock()
+        self._latest_coarse_x: Optional[Tuple[float, Time]] = None
+        self.infrared_layer = InfraredReceiveLayer(
+            node=self,
+            config=infrared_config,
+            query_device_ids=infrared_query_device_ids,
+            latest_coarse_x_provider=self._get_latest_coarse_x_snapshot,
+            serial_port=infrared_serial_port,
+            serial_baudrate=infrared_serial_baudrate,
+            serial_response_timeout_sec=infrared_serial_response_timeout_sec,
+            serial_poll_rate_hz=infrared_serial_poll_rate_hz,
+        )
         self.publish_layer = ResultPublishLayer(
             node=self,
             pose_msg_type=self._pose_msg_type,
@@ -145,9 +201,11 @@ class AgvPoseRefinerNode(Node):
             30,
         )
         self.receive_layer.start()
+        self.infrared_layer.start()
         self.get_logger().info(
             "agv_pose_refiner started "
             f"(serial={self.receive_layer.serial_port}@{self.receive_layer.serial_baudrate}, "
+            f"infrared={self.infrared_layer.serial_port}@{self.infrared_layer.serial_baudrate}, "
             f"lidar={lidar_pose_topic}, scene={self.solve_layer.active_scene})"
         )
 
@@ -186,6 +244,7 @@ class AgvPoseRefinerNode(Node):
 
     def _on_lidar_custom_pose(self, msg: Any) -> None:
         coarse = self._coarse_pose_from_custom_pose(msg)
+        self._set_latest_coarse_x(coarse.x, coarse.stamp)
         now = self.get_clock().now()
         range_frame = self.receive_layer.snapshot_frame()
         result = self.solve_layer.refine(
@@ -216,7 +275,16 @@ class AgvPoseRefinerNode(Node):
             yaw_deg=wrap_deg(math.degrees(yaw_rad)),
         )
 
+    def _set_latest_coarse_x(self, x: float, stamp: Time) -> None:
+        with self._latest_coarse_pose_lock:
+            self._latest_coarse_x = (float(x), stamp)
+
+    def _get_latest_coarse_x_snapshot(self) -> Optional[Tuple[float, Time]]:
+        with self._latest_coarse_pose_lock:
+            return self._latest_coarse_x
+
     def destroy_node(self) -> bool:
+        self.infrared_layer.stop()
         self.receive_layer.stop()
         return super().destroy_node()
 
