@@ -20,6 +20,7 @@ from .common import (
     default_config_path,
     euler_from_quaternion_components,
     parse_serial_sensor_map,
+    resolve_serial_max_range_frame_age_ms,
     resolve_query_device_ids,
     wrap_deg,
 )
@@ -64,7 +65,8 @@ class AgvPoseRefinerNode(Node):
         self.declare_parameter("serial_decode_log_enabled", True)
         self.declare_parameter("serial_decode_log_interval_ms", 0)
         self.declare_parameter("serial_expect_matching_device_id", True)
-        self.declare_parameter("serial_query_device_ids", [1, 2])
+        self.declare_parameter("serial_query_device_ids", [])
+        self.declare_parameter("serial_max_range_frame_age_ms", 0.0)
 
         # ---- Infrared serial ------------------------------------------------
         self.declare_parameter("infrared_serial_port", "/dev/infrared_serial")
@@ -87,8 +89,13 @@ class AgvPoseRefinerNode(Node):
 
         # ---- Parse sensor_map from sensors.yaml -----------------------------
         sensor_map = parse_serial_sensor_map(sensors_config.get("sensor_map", {}))
+        serial_poll_rate_hz = float(self.get_parameter("serial_poll_rate_hz").value)
         query_device_ids = resolve_query_device_ids(
             self.get_parameter("serial_query_device_ids").value, sensor_map
+        )
+        self._serial_max_range_frame_age_ms = resolve_serial_max_range_frame_age_ms(
+            self.get_parameter("serial_max_range_frame_age_ms").value,
+            serial_poll_rate_hz,
         )
         infrared_config = parse_infrared_config(solver_config)
         infrared_runtime_config = solver_config.get("infrared", {})
@@ -155,7 +162,7 @@ class AgvPoseRefinerNode(Node):
             serial_min_publish_interval_ms=self.get_parameter(
                 "serial_min_publish_interval_ms"
             ).value,
-            serial_poll_rate_hz=self.get_parameter("serial_poll_rate_hz").value,
+            serial_poll_rate_hz=serial_poll_rate_hz,
             serial_response_timeout_sec=self.get_parameter(
                 "serial_response_timeout_sec"
             ).value,
@@ -205,6 +212,8 @@ class AgvPoseRefinerNode(Node):
         self.get_logger().info(
             "agv_pose_refiner started "
             f"(serial={self.receive_layer.serial_port}@{self.receive_layer.serial_baudrate}, "
+            f"serial_query_ids={query_device_ids}, "
+            f"serial_max_range_frame_age_ms={self._serial_max_range_frame_age_ms:.1f}, "
             f"infrared={self.infrared_layer.serial_port}@{self.infrared_layer.serial_baudrate}, "
             f"lidar={lidar_pose_topic}, scene={self.solve_layer.active_scene})"
         )
@@ -246,11 +255,15 @@ class AgvPoseRefinerNode(Node):
         coarse = self._coarse_pose_from_custom_pose(msg)
         self._set_latest_coarse_x(coarse.x, coarse.stamp)
         now = self.get_clock().now()
-        range_frame = self.receive_layer.snapshot_frame()
+        range_frame = self.receive_layer.snapshot_frame(
+            now=now,
+            max_age_ms=self._serial_max_range_frame_age_ms,
+        )
         result = self.solve_layer.refine(
             coarse=coarse,
             range_frame=range_frame,
             now=now,
+            max_range_frame_age_ms=self._serial_max_range_frame_age_ms,
         )
         self.publish_layer.publish(
             coarse,

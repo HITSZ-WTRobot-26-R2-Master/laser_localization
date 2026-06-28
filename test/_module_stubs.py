@@ -36,6 +36,7 @@ def _install_rclpy_stubs() -> None:
     if "rclpy.time" in sys.modules:
         return
     time_module = types.ModuleType("rclpy.time")
+    duration_module = types.ModuleType("rclpy.duration")
     node_module = types.ModuleType("rclpy.node")
 
     class Time:
@@ -49,18 +50,31 @@ def _install_rclpy_stubs() -> None:
         def to_msg(self) -> None:
             return None
 
+        def __sub__(self, other: "Time") -> "Duration":
+            return Duration(nanoseconds=self.nanoseconds - other.nanoseconds)
+
+    class Duration:
+        def __init__(self, *, nanoseconds: int = 0) -> None:
+            self.nanoseconds = nanoseconds
+
+        def __ge__(self, other: "Duration") -> bool:
+            return self.nanoseconds >= other.nanoseconds
+
     class Node:
         pass
 
     time_module.Time = Time
+    duration_module.Duration = Duration
     node_module.Node = Node
     root_module = types.ModuleType("rclpy")
     root_module.time = time_module
+    root_module.duration = duration_module
     root_module.node = node_module
     root_module.ok = lambda: True
     root_module.shutdown = lambda: None
     sys.modules["rclpy"] = root_module
     sys.modules["rclpy.time"] = time_module
+    sys.modules["rclpy.duration"] = duration_module
     sys.modules["rclpy.node"] = node_module
 
 

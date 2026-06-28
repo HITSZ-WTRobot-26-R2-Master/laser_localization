@@ -171,7 +171,7 @@ class TestInfraredEventProcessor(unittest.TestCase):
             self._frame(rx_ms=1030, device_id=4, raw_byte=0x11, device_ts_ms=1010)
         )
         self.assertEqual(duplicate_byte.action, "dropped")
-        self.assertEqual(duplicate_byte.reason, "RAW_BYTE_DUPLICATED")
+        self.assertEqual(duplicate_byte.reason, "MAPPED_EVENT_DUPLICATED")
 
         older_ts = self.processor.process_frame(
             self._frame(rx_ms=1040, device_id=3, raw_byte=0x22, device_ts_ms=130)
@@ -189,7 +189,7 @@ class TestInfraredEventProcessor(unittest.TestCase):
         self.assertEqual(result.action, "dropped")
         self.assertEqual(result.reason, "RAW_BYTE_ZERO")
 
-    def test_no_coarse_x_drops_after_shared_dedup_gate(self) -> None:
+    def test_no_coarse_x_does_not_poison_future_publish(self) -> None:
         self.latest_coarse = None
         self.processor.process_frame(
             self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
@@ -199,7 +199,14 @@ class TestInfraredEventProcessor(unittest.TestCase):
         )
         self.assertEqual(result.action, "dropped")
         self.assertEqual(result.reason, "NO_COARSE_X")
-        self.assertIsNotNone(self.processor.snapshot_shared_last_event())
+        self.assertIsNone(self.processor.snapshot_shared_last_event())
+
+        self.latest_coarse = (1.0, Time(nanoseconds=1_000_000_000))
+        published = self.processor.process_frame(
+            self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
+        )
+        self.assertEqual(published.action, "published")
+        self.assertEqual(published.event.mapped_byte, 0x01)
 
     def test_stale_coarse_x_is_dropped(self) -> None:
         self.latest_coarse = (1.0, Time(nanoseconds=100_000_000))
@@ -211,6 +218,56 @@ class TestInfraredEventProcessor(unittest.TestCase):
         )
         self.assertEqual(result.action, "dropped")
         self.assertEqual(result.reason, "COARSE_X_TOO_OLD")
+        self.assertIsNone(self.processor.snapshot_shared_last_event())
+
+    def test_same_raw_byte_can_publish_different_mapped_event(self) -> None:
+        self.processor = InfraredEventProcessor(
+            config=InfraredConfig(
+                active_scene="mode_red",
+                use_topic="/infrared",
+                debug_topic="/infrared_debug",
+                max_coarse_pose_age_ms=500.0,
+                scenes={
+                    "mode_red": (
+                        InfraredRule(
+                            x_min=0.0,
+                            x_max=2.0,
+                            raw_bytes=(0x11,),
+                            mapped_type="near",
+                            send_to_topic=0x01,
+                        ),
+                        InfraredRule(
+                            x_min=9.0,
+                            x_max=12.0,
+                            raw_bytes=(0x11,),
+                            mapped_type="far",
+                            send_to_topic=0x03,
+                        ),
+                    )
+                },
+            ),
+            latest_coarse_x_provider=lambda: self.latest_coarse,
+        )
+        self.processor.process_frame(
+            self._frame(rx_ms=1000, device_id=3, raw_byte=0x00, device_ts_ms=120)
+        )
+        self.processor.process_frame(
+            self._frame(rx_ms=1005, device_id=4, raw_byte=0x00, device_ts_ms=1000)
+        )
+
+        self.latest_coarse = (1.0, Time(nanoseconds=1_000_000_000))
+        near_event = self.processor.process_frame(
+            self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
+        )
+        self.assertEqual(near_event.action, "published")
+        self.assertEqual(near_event.event.mapped_byte, 0x01)
+
+        self.latest_coarse = (10.0, Time(nanoseconds=1_020_000_000))
+        far_event = self.processor.process_frame(
+            self._frame(rx_ms=1030, device_id=4, raw_byte=0x11, device_ts_ms=1020)
+        )
+        self.assertEqual(far_event.action, "published")
+        self.assertEqual(far_event.event.mapped_byte, 0x03)
 
     def test_device_timestamp_rollback_requires_resync(self) -> None:
         self.processor.process_frame(

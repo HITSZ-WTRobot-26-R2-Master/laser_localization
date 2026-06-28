@@ -196,16 +196,47 @@ def resolve_query_device_ids(
     configured: Optional[List[int]],
     sensor_map: Dict[str, SerialSensorMapping],
 ) -> List[int]:
-    if configured is not None:
-        if not configured:
-            raise RuntimeError("serial_query_device_ids must be a non-empty list")
-        for device_id in configured:
-            if device_id < 0 or device_id > 255:
-                raise RuntimeError(
-                    f"serial_query_device_ids contains invalid device id {device_id}"
-                )
-        return [int(d) for d in configured]
-    return sorted({mapping.device_id for mapping in sensor_map.values()})
+    mapped_device_ids = sorted({mapping.device_id for mapping in sensor_map.values()})
+    if configured is None or len(configured) == 0:
+        return mapped_device_ids
+
+    resolved: List[int] = []
+    seen = set()
+    for raw_device_id in configured:
+        device_id = int(raw_device_id)
+        if device_id < 0 or device_id > 255:
+            raise RuntimeError(
+                f"serial_query_device_ids contains invalid device id {device_id}"
+            )
+        if device_id in seen:
+            raise RuntimeError(
+                f"serial_query_device_ids contains duplicate device id {device_id}"
+            )
+        seen.add(device_id)
+        resolved.append(device_id)
+
+    if set(resolved) != set(mapped_device_ids):
+        raise RuntimeError(
+            "serial_query_device_ids override must match the device ids used in "
+            f"sensor_map (configured={resolved}, sensor_map={mapped_device_ids})"
+        )
+    return resolved
+
+
+def resolve_serial_max_range_frame_age_ms(
+    configured_ms: Any,
+    serial_poll_rate_hz: float,
+) -> float:
+    configured = float(configured_ms)
+    if not math.isfinite(configured):
+        raise RuntimeError("serial_max_range_frame_age_ms must be finite")
+    if configured < 0.0:
+        raise RuntimeError("serial_max_range_frame_age_ms must be >= 0")
+    if configured > 0.0:
+        return configured
+    if serial_poll_rate_hz > 0.0:
+        return max(250.0, 2500.0 / float(serial_poll_rate_hz))
+    return 250.0
 
 
 def coerce_bool(value: Any) -> bool:

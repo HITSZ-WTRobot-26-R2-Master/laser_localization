@@ -57,6 +57,7 @@ class PoseSolveLayer:
         coarse: CoarsePose,
         range_frame: Optional[RangeFrame],
         now: Time,
+        max_range_frame_age_ms: Optional[float] = None,
     ) -> SolveResult:
         if not self._is_finite_pose(coarse):
             return self._make_result(
@@ -102,6 +103,24 @@ class PoseSolveLayer:
             range_frame_count=1,
             region_debug=region_debug,
         )
+        if (
+            max_range_frame_age_ms is not None
+            and max_range_frame_age_ms > 0.0
+            and prior_age_ms > max_range_frame_age_ms
+        ):
+            debug_payload = dict(debug_payload)
+            timing_debug = dict(debug_payload.get("timing_debug", {}))
+            timing_debug["max_range_frame_age_ms"] = self._debug_float(
+                max_range_frame_age_ms
+            )
+            debug_payload["timing_debug"] = timing_debug
+            return self._make_coarse_result(
+                coarse,
+                reason="STALE_SERIAL_RANGE_FRAME",
+                prior_age_ms=prior_age_ms,
+                usable_sensor_count=usable_sensor_count,
+                debug=debug_payload,
+            )
         if region_match is None or not region_match.wall_pairs:
             return self._make_coarse_result(
                 coarse,

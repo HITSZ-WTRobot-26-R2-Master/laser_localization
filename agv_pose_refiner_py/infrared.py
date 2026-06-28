@@ -61,7 +61,8 @@ class InfraredBoardSyncState:
 
 @dataclass(frozen=True)
 class SharedInfraredEvent:
-    raw_byte: int
+    mapped_byte: int
+    mapped_type: str
     aligned_ts_ms: int
     source_device_id: int
 
@@ -268,23 +269,6 @@ class InfraredEventProcessor:
                 aligned_ts_ms=aligned_ts_ms,
             )
 
-        if (
-            self._shared_last_event is not None
-            and frame.raw_byte == self._shared_last_event.raw_byte
-        ):
-            return InfraredProcessResult(
-                action="dropped",
-                reason="RAW_BYTE_DUPLICATED",
-                aligned_ts_ms=aligned_ts_ms,
-            )
-
-        # Shared deduplication is intentionally applied before scene mapping.
-        self._shared_last_event = SharedInfraredEvent(
-            raw_byte=frame.raw_byte,
-            aligned_ts_ms=aligned_ts_ms,
-            source_device_id=frame.device_id,
-        )
-
         coarse_snapshot = self._snapshot_latest_coarse_x()
         if coarse_snapshot is None:
             return InfraredProcessResult(
@@ -308,6 +292,24 @@ class InfraredEventProcessor:
                 reason="NO_RULE_MATCH",
                 aligned_ts_ms=aligned_ts_ms,
             )
+
+        if (
+            self._shared_last_event is not None
+            and matched_rule.send_to_topic == self._shared_last_event.mapped_byte
+            and matched_rule.mapped_type == self._shared_last_event.mapped_type
+        ):
+            return InfraredProcessResult(
+                action="dropped",
+                reason="MAPPED_EVENT_DUPLICATED",
+                aligned_ts_ms=aligned_ts_ms,
+            )
+
+        self._shared_last_event = SharedInfraredEvent(
+            mapped_byte=matched_rule.send_to_topic,
+            mapped_type=matched_rule.mapped_type,
+            aligned_ts_ms=aligned_ts_ms,
+            source_device_id=frame.device_id,
+        )
 
         return InfraredProcessResult(
             action="published",

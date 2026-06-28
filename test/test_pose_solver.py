@@ -560,6 +560,34 @@ class TestRegionYawSourceSelection(unittest.TestCase):
             solver_debug["xy_projection_yaw_in_corner_deg"], 8.0, places=6
         )
 
+    def test_refine_rejects_stale_range_frame(self) -> None:
+        self.solver.active_scene = "mode_red"
+        self.solver.scene_profiles = {
+            "mode_red": self._make_scene_profile(),
+        }
+        coarse = CoarsePose(
+            stamp=Time(nanoseconds=0),
+            x=0.6,
+            y=-1.125,
+            z=0.0,
+            roll_rad=0.0,
+            pitch_rad=0.0,
+            yaw_deg=0.0,
+        )
+        range_frame = self._make_range_frame(front_center=2.6)
+
+        result = self.solver.refine(
+            coarse,
+            range_frame,
+            Time(nanoseconds=300_000_000),
+            max_range_frame_age_ms=250.0,
+        )
+
+        self.assertEqual(result.state, STATE_COARSE_ONLY)
+        self.assertEqual(result.reason, "STALE_SERIAL_RANGE_FRAME")
+        self.assertEqual(result.pose_source, "lidar_coarse")
+        self.assertAlmostEqual(result.prior_age_ms, 300.0, places=6)
+
 
 class TestCompensatedFrontSideSolver(unittest.TestCase):
     def setUp(self) -> None:

@@ -112,11 +112,19 @@ class SerialReceiveLayer:
                 pass
         if self._serial_thread is not None and self._serial_thread.is_alive():
             self._serial_thread.join(timeout=2.0)
+        self._clear_latest_range_state()
         self._serial_thread = None
 
-    def snapshot_frame(self) -> Optional[RangeFrame]:
+    def snapshot_frame(self, *, now: Optional[Time] = None, max_age_ms: float = 0.0) -> Optional[RangeFrame]:
         with self._latest_range_frame_lock:
-            return self._latest_range_frame
+            frame = self._latest_range_frame
+        if frame is None:
+            return None
+        if max_age_ms > 0.0:
+            snapshot_now = now or self._clock.now()
+            if abs_time_diff_ms(snapshot_now, frame.stamp) > max_age_ms:
+                return None
+        return frame
 
     def snapshot_status(self, now: Optional[Time] = None) -> Dict[str, Any]:
         snapshot_now = now or self._clock.now()
@@ -217,6 +225,7 @@ class SerialReceiveLayer:
             self._pending_board_frames.clear()
             self._latest_board_frames.clear()
             self._last_decode_log_stamp_ns_by_device.clear()
+        self._clear_latest_range_state()
         for reset_name in ("reset_input_buffer", "reset_output_buffer"):
             reset_fn = getattr(handle, reset_name, None)
             if reset_fn is None:
@@ -613,6 +622,18 @@ class SerialReceiveLayer:
         with self._latest_range_frame_lock:
             self._latest_range_frame = frame
         self._last_serial_frame_stamp = stamp
+
+    def _clear_latest_range_state(self) -> None:
+        with self._latest_range_frame_lock:
+            self._latest_range_frame = None
+        self._last_serial_frame_stamp = None
+        with self._parser_lock:
+            self._latest_serial_ranges_m = {
+                name: float("nan") for name in SENSOR_ORDER
+            }
+            self._latest_serial_valid = {
+                name: False for name in SENSOR_ORDER
+            }
 
     def _should_publish_serial_frame(self, stamp: Time) -> bool:
         if self._last_serial_frame_stamp is None:

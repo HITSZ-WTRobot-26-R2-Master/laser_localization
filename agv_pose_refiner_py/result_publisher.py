@@ -292,6 +292,7 @@ class ResultPublishLayer:
         reason_text_by_code = {
             "NON_FINITE_LIDAR_POSE": "input lidar pose contains NaN or Inf",
             "NO_SERIAL_RANGE_AVAILABLE": "no serial range frame is available",
+            "STALE_SERIAL_RANGE_FRAME": "latest serial range frame is older than the configured age limit",
             "NO_REGION_MATCHED": "coarse lidar pose is outside all configured solve regions",
             "INSUFFICIENT_VALID_BEAMS": "not enough valid beams for solving",
             "THETA_EXCEEDS_LIMIT": "solved yaw exceeds configured limit",
