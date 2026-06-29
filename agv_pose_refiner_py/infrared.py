@@ -8,6 +8,11 @@ from rclpy.time import Time
 
 from .common import abs_time_diff_ms
 
+INFRARED_ACTIVE_X_RANGES: Tuple[Tuple[float, float], ...] = (
+    (0.0, 2.0),
+    (9.5, 12.0),
+)
+
 
 @dataclass(frozen=True)
 class InfraredRule:
@@ -251,10 +256,12 @@ class InfraredEventProcessor:
         self._rules = config.scenes[config.active_scene]
         self._board_states: Dict[int, InfraredBoardSyncState] = {}
         self._shared_last_event: Optional[SharedInfraredEvent] = None
+        self._shared_last_raw_byte = 0x00
 
     def reset(self) -> None:
         self._board_states.clear()
         self._shared_last_event = None
+        self._shared_last_raw_byte = 0x00
 
     def process_frame(self, frame: InfraredFrame) -> InfraredProcessResult:
         state = self._board_states.setdefault(frame.device_id, InfraredBoardSyncState())
@@ -324,6 +331,14 @@ class InfraredEventProcessor:
                 aligned_ts_ms=aligned_ts_ms,
             )
 
+        if not self._is_x_in_active_window(coarse_snapshot.x):
+            self._shared_last_raw_byte = 0x00
+            return InfraredProcessResult(
+                action="dropped",
+                reason="OUTSIDE_ACTIVE_X_WINDOW",
+                aligned_ts_ms=aligned_ts_ms,
+            )
+
         matched_rule = self._match_rule(coarse_snapshot.x, frame.raw_byte)
         if matched_rule is None:
             return InfraredProcessResult(
@@ -332,16 +347,14 @@ class InfraredEventProcessor:
                 aligned_ts_ms=aligned_ts_ms,
             )
 
-        if (
-            self._shared_last_event is not None
-            and frame.raw_byte == self._shared_last_event.raw_byte
-        ):
+        if frame.raw_byte == self._shared_last_raw_byte:
             return InfraredProcessResult(
                 action="dropped",
                 reason="RAW_BYTE_DUPLICATED",
                 aligned_ts_ms=aligned_ts_ms,
             )
 
+        self._shared_last_raw_byte = frame.raw_byte
         self._shared_last_event = SharedInfraredEvent(
             raw_byte=frame.raw_byte,
             mapped_byte=matched_rule.send_to_topic,
@@ -390,6 +403,12 @@ class InfraredEventProcessor:
             if rule.x_min <= coarse_x <= rule.x_max and raw_byte in rule.raw_bytes:
                 return rule
         return None
+
+    def _is_x_in_active_window(self, coarse_x: float) -> bool:
+        for x_min, x_max in INFRARED_ACTIVE_X_RANGES:
+            if x_min <= coarse_x <= x_max:
+                return True
+        return False
 
     def _rx_stamp_to_ms(self, stamp: Time) -> int:
         return int(stamp.nanoseconds / 1e6)

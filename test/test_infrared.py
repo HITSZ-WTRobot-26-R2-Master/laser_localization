@@ -330,6 +330,79 @@ class TestInfraredEventProcessor(unittest.TestCase):
         self.assertEqual(result.reason, "COARSE_X_TOO_OLD")
         self.assertIsNone(self.processor.snapshot_shared_last_event())
 
+    def test_x_outside_active_window_clears_raw_byte_memory_without_publish(self) -> None:
+        self.processor.process_frame(
+            self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
+        )
+        published = self.processor.process_frame(
+            self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
+        )
+        self.assertEqual(published.action, "published")
+        self.assertEqual(self.processor._shared_last_raw_byte, 0x11)
+
+        self.latest_coarse = (5.0, Time(nanoseconds=1_020_000_000))
+        outside = self.processor.process_frame(
+            self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
+        )
+        self.assertEqual(outside.action, "dropped")
+        self.assertEqual(outside.reason, "OUTSIDE_ACTIVE_X_WINDOW")
+        self.assertEqual(self.processor._shared_last_raw_byte, 0x00)
+        shared_event = self.processor.snapshot_shared_last_event()
+        self.assertIsNotNone(shared_event)
+        self.assertEqual(shared_event.raw_byte, 0x11)
+
+    def test_same_raw_byte_republishes_after_passing_through_inactive_x_window(self) -> None:
+        self.processor = InfraredEventProcessor(
+            config=InfraredConfig(
+                active_scene="mode_red",
+                use_topic="/infrared",
+                debug_topic="/infrared_debug",
+                max_coarse_pose_age_ms=500.0,
+                scenes={
+                    "mode_red": (
+                        InfraredRule(
+                            x_min=0.0,
+                            x_max=2.0,
+                            raw_bytes=(0x11,),
+                            mapped_type="near",
+                            send_to_topic=0x01,
+                        ),
+                        InfraredRule(
+                            x_min=9.0,
+                            x_max=12.0,
+                            raw_bytes=(0x11,),
+                            mapped_type="far",
+                            send_to_topic=0x03,
+                        ),
+                    )
+                },
+            ),
+            latest_coarse_x_provider=lambda: self.latest_coarse,
+        )
+
+        self.processor.process_frame(
+            self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
+        )
+        first = self.processor.process_frame(
+            self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
+        )
+        self.assertEqual(first.action, "published")
+        self.assertEqual(first.event.mapped_byte, 0x01)
+
+        self.latest_coarse = (5.0, Time(nanoseconds=1_020_000_000))
+        outside = self.processor.process_frame(
+            self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
+        )
+        self.assertEqual(outside.reason, "OUTSIDE_ACTIVE_X_WINDOW")
+        self.assertEqual(self.processor._shared_last_raw_byte, 0x00)
+
+        self.latest_coarse = (10.0, Time(nanoseconds=1_030_000_000))
+        second = self.processor.process_frame(
+            self._frame(rx_ms=1030, device_id=3, raw_byte=0x11, device_ts_ms=150)
+        )
+        self.assertEqual(second.action, "published")
+        self.assertEqual(second.event.mapped_byte, 0x03)
+
     def test_same_raw_byte_is_deduplicated_even_if_mapping_differs(self) -> None:
         self.processor = InfraredEventProcessor(
             config=InfraredConfig(
