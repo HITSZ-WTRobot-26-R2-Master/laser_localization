@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from rclpy.time import Time
@@ -61,6 +62,7 @@ class InfraredBoardSyncState:
 
 @dataclass(frozen=True)
 class SharedInfraredEvent:
+    raw_byte: int
     mapped_byte: int
     mapped_type: str
     aligned_ts_ms: int
@@ -97,6 +99,8 @@ def parse_infrared_config(solver_config: Dict[str, Any]) -> InfraredConfig:
     max_coarse_pose_age_ms = float(
         infrared_cfg.get("max_coarse_pose_age_ms", 500.0)
     )
+    if not math.isfinite(max_coarse_pose_age_ms):
+        raise RuntimeError("infrared.max_coarse_pose_age_ms must be finite")
     if max_coarse_pose_age_ms < 0.0:
         raise RuntimeError("infrared.max_coarse_pose_age_ms must be >= 0")
 
@@ -190,12 +194,18 @@ def resolve_infrared_query_device_ids(configured: Optional[List[int]]) -> List[i
     if not configured:
         raise RuntimeError("infrared_query_device_ids must be a non-empty list")
     resolved: List[int] = []
+    seen = set()
     for raw_device_id in configured:
         device_id = int(raw_device_id)
         if device_id < 0 or device_id > 255:
             raise RuntimeError(
                 f"infrared_query_device_ids contains invalid device id {device_id}"
             )
+        if device_id in seen:
+            raise RuntimeError(
+                f"infrared_query_device_ids contains duplicate device id {device_id}"
+            )
+        seen.add(device_id)
         resolved.append(device_id)
     return resolved
 
@@ -295,16 +305,16 @@ class InfraredEventProcessor:
 
         if (
             self._shared_last_event is not None
-            and matched_rule.send_to_topic == self._shared_last_event.mapped_byte
-            and matched_rule.mapped_type == self._shared_last_event.mapped_type
+            and frame.raw_byte == self._shared_last_event.raw_byte
         ):
             return InfraredProcessResult(
                 action="dropped",
-                reason="MAPPED_EVENT_DUPLICATED",
+                reason="RAW_BYTE_DUPLICATED",
                 aligned_ts_ms=aligned_ts_ms,
             )
 
         self._shared_last_event = SharedInfraredEvent(
+            raw_byte=frame.raw_byte,
             mapped_byte=matched_rule.send_to_topic,
             mapped_type=matched_rule.mapped_type,
             aligned_ts_ms=aligned_ts_ms,

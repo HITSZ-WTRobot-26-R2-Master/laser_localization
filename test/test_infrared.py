@@ -154,7 +154,7 @@ class TestInfraredEventProcessor(unittest.TestCase):
         self.assertEqual(result.reason, "SYNC_ESTABLISHED")
         self.assertIsNone(self.processor.snapshot_shared_last_event())
 
-    def test_publishes_only_when_byte_changes_and_timestamp_increases(self) -> None:
+    def test_publishes_only_when_raw_byte_changes_and_timestamp_increases(self) -> None:
         self.processor.process_frame(
             self._frame(rx_ms=990, device_id=4, raw_byte=0x11, device_ts_ms=980)
         )
@@ -171,13 +171,29 @@ class TestInfraredEventProcessor(unittest.TestCase):
             self._frame(rx_ms=1030, device_id=4, raw_byte=0x11, device_ts_ms=1010)
         )
         self.assertEqual(duplicate_byte.action, "dropped")
-        self.assertEqual(duplicate_byte.reason, "MAPPED_EVENT_DUPLICATED")
+        self.assertEqual(duplicate_byte.reason, "RAW_BYTE_DUPLICATED")
+
+    def test_same_mapped_topic_republishes_when_raw_byte_changes(self) -> None:
+        self.processor.process_frame(
+            self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
+        )
+        first = self.processor.process_frame(
+            self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
+        )
+        self.assertEqual(first.action, "published")
+        self.assertEqual(first.event.mapped_byte, 0x01)
+
+        second = self.processor.process_frame(
+            self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
+        )
+        self.assertEqual(second.action, "published")
+        self.assertEqual(second.event.mapped_byte, 0x01)
 
         older_ts = self.processor.process_frame(
             self._frame(rx_ms=1040, device_id=3, raw_byte=0x22, device_ts_ms=130)
         )
         self.assertEqual(older_ts.action, "dropped")
-        self.assertEqual(older_ts.reason, "ALIGNED_TIMESTAMP_NOT_NEWER")
+        self.assertEqual(older_ts.reason, "DEVICE_TIMESTAMP_ROLLBACK")
 
     def test_zero_byte_is_dropped_before_mapping(self) -> None:
         self.processor.process_frame(
@@ -220,7 +236,7 @@ class TestInfraredEventProcessor(unittest.TestCase):
         self.assertEqual(result.reason, "COARSE_X_TOO_OLD")
         self.assertIsNone(self.processor.snapshot_shared_last_event())
 
-    def test_same_raw_byte_can_publish_different_mapped_event(self) -> None:
+    def test_same_raw_byte_is_deduplicated_even_if_mapping_differs(self) -> None:
         self.processor = InfraredEventProcessor(
             config=InfraredConfig(
                 active_scene="mode_red",
@@ -266,8 +282,22 @@ class TestInfraredEventProcessor(unittest.TestCase):
         far_event = self.processor.process_frame(
             self._frame(rx_ms=1030, device_id=4, raw_byte=0x11, device_ts_ms=1020)
         )
-        self.assertEqual(far_event.action, "published")
-        self.assertEqual(far_event.event.mapped_byte, 0x03)
+        self.assertEqual(far_event.action, "dropped")
+        self.assertEqual(far_event.reason, "RAW_BYTE_DUPLICATED")
+
+    def test_snapshot_shared_last_event_exposes_raw_byte(self) -> None:
+        self.processor.process_frame(
+            self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
+        )
+        published = self.processor.process_frame(
+            self._frame(rx_ms=1010, device_id=3, raw_byte=0x22, device_ts_ms=130)
+        )
+        self.assertEqual(published.action, "published")
+
+        shared_event = self.processor.snapshot_shared_last_event()
+        self.assertIsNotNone(shared_event)
+        self.assertEqual(shared_event.raw_byte, 0x22)
+        self.assertEqual(shared_event.mapped_byte, 0x01)
 
     def test_device_timestamp_rollback_requires_resync(self) -> None:
         self.processor.process_frame(
@@ -350,6 +380,59 @@ class TestInfraredReceiveLayer(unittest.TestCase):
         self.assertEqual(debug_payload["mapped_byte"], 0x01)
         self.assertEqual(debug_payload["scene"], "mode_red")
         self.assertAlmostEqual(debug_payload["x"], 1.0, places=6)
+
+    def test_snapshot_status_includes_shared_raw_byte(self) -> None:
+        node = DummyNode()
+        layer = InfraredReceiveLayer(
+            node=node,
+            config=InfraredConfig(
+                active_scene="mode_red",
+                use_topic="/infrared",
+                debug_topic="/infrared_debug",
+                max_coarse_pose_age_ms=500.0,
+                scenes={
+                    "mode_red": (
+                        InfraredRule(
+                            x_min=0.0,
+                            x_max=2.0,
+                            raw_bytes=(0x11,),
+                            mapped_type="spear_done_continue",
+                            send_to_topic=0x01,
+                        ),
+                    )
+                },
+            ),
+            query_device_ids=[3, 4],
+            latest_coarse_x_provider=lambda: (1.0, Time(nanoseconds=1_000_000_000)),
+            serial_port="/dev/infrared_serial",
+            serial_baudrate=115200,
+            serial_response_timeout_sec=0.02,
+            serial_poll_rate_hz=100.0,
+        )
+
+        layer._handle_frame_locked(
+            InfraredFrame(
+                rx_stamp=Time(nanoseconds=1_000_000_000),
+                device_id=3,
+                report_type=0x01,
+                raw_byte=0x11,
+                device_timestamp_ms=100,
+            )
+        )
+        layer._handle_frame_locked(
+            InfraredFrame(
+                rx_stamp=Time(nanoseconds=1_010_000_000),
+                device_id=3,
+                report_type=0x01,
+                raw_byte=0x11,
+                device_timestamp_ms=110,
+            )
+        )
+
+        snapshot = layer.snapshot_status()
+        self.assertEqual(snapshot["shared_last_event"]["raw_byte"], 0x11)
+        self.assertEqual(snapshot["shared_last_event"]["source_device_id"], 3)
+        self.assertEqual(snapshot["shared_last_event"]["aligned_ts_ms"], 1010)
 
 
 if __name__ == "__main__":
