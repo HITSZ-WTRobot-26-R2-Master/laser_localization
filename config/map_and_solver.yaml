@@ -24,8 +24,6 @@ scene_manager:
   allow_runtime_switch: false
 
 infrared:
-  use_topic: /infrared
-  debug_topic: /infrared_debug
   max_coarse_pose_age_ms: 500.0
   scenes:
     mode_red:

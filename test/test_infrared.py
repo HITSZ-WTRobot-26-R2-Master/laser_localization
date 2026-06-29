@@ -156,6 +156,29 @@ class TestInfraredConfig(unittest.TestCase):
         self.assertEqual(config.use_topic, "/infrared")
         self.assertEqual(config.debug_topic, "/infrared_debug")
 
+    def test_parse_infrared_config_uses_defaults_when_topics_missing(self) -> None:
+        config = parse_infrared_config(
+            {
+                "scene_manager": {"active_scene": "mode_red"},
+                "infrared": {
+                    "scenes": {
+                        "mode_red": {
+                            "rules": [
+                                {
+                                    "x_range": [0.0, 2.0],
+                                    "raw_bytes": [0x11],
+                                    "mapped_type": "test",
+                                    "send_to_topic": "0x01",
+                                }
+                            ]
+                        }
+                    },
+                },
+            }
+        )
+        self.assertEqual(config.use_topic, "/infrared")
+        self.assertEqual(config.debug_topic, "/infrared_debug")
+
 
 class TestInfraredEventProcessor(unittest.TestCase):
     def setUp(self) -> None:

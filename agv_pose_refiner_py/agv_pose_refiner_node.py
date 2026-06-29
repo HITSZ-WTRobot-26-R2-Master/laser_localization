@@ -99,9 +99,6 @@ class AgvPoseRefinerNode(Node):
             self.get_parameter("serial_max_range_frame_age_ms").value,
             serial_poll_rate_hz,
         )
-        infrared_runtime_config = solver_config.get("infrared", {})
-        if not isinstance(infrared_runtime_config, dict):
-            infrared_runtime_config = {}
         infrared_runtime_overrides = {
             "use_topic": self.get_parameter("infrared_use_topic").value,
             "debug_topic": self.get_parameter("infrared_debug_topic").value,
@@ -111,34 +108,17 @@ class AgvPoseRefinerNode(Node):
             runtime_config=infrared_runtime_overrides,
         )
         infrared_query_device_ids = resolve_infrared_query_device_ids(
-            infrared_runtime_config.get(
-                "query_device_ids",
-                self.get_parameter("infrared_query_device_ids").value,
-            )
+            self.get_parameter("infrared_query_device_ids").value
         )
-        infrared_serial_port = str(
-            infrared_runtime_config.get(
-                "serial_port",
-                self.get_parameter("infrared_serial_port").value,
-            )
-        )
+        infrared_serial_port = str(self.get_parameter("infrared_serial_port").value)
         infrared_serial_baudrate = int(
-            infrared_runtime_config.get(
-                "serial_baudrate",
-                self.get_parameter("infrared_serial_baudrate").value,
-            )
+            self.get_parameter("infrared_serial_baudrate").value
         )
         infrared_serial_response_timeout_sec = float(
-            infrared_runtime_config.get(
-                "serial_response_timeout_sec",
-                self.get_parameter("infrared_serial_response_timeout_sec").value,
-            )
+            self.get_parameter("infrared_serial_response_timeout_sec").value
         )
         infrared_serial_poll_rate_hz = float(
-            infrared_runtime_config.get(
-                "serial_poll_rate_hz",
-                self.get_parameter("infrared_serial_poll_rate_hz").value,
-            )
+            self.get_parameter("infrared_serial_poll_rate_hz").value
         )
 
         # ---- Validate input format ------------------------------------------

@@ -99,10 +99,12 @@ def parse_infrared_config(
     use_topic = _resolve_optional_runtime_string(
         runtime_cfg.get("use_topic"),
         infrared_cfg.get("use_topic"),
+        "/infrared",
     )
     debug_topic = _resolve_optional_runtime_string(
         runtime_cfg.get("debug_topic"),
         infrared_cfg.get("debug_topic"),
+        "/infrared_debug",
     )
     if not use_topic:
         raise RuntimeError("infrared.use_topic must be configured")
@@ -201,11 +203,18 @@ def parse_infrared_config(
     )
 
 
-def _resolve_optional_runtime_string(runtime_value: Any, fallback_value: Any) -> str:
+def _resolve_optional_runtime_string(
+    runtime_value: Any,
+    fallback_value: Any,
+    default_value: str,
+) -> str:
     runtime_text = str(runtime_value).strip() if runtime_value is not None else ""
     if runtime_text:
         return runtime_text
-    return str(fallback_value).strip() if fallback_value is not None else ""
+    fallback_text = str(fallback_value).strip() if fallback_value is not None else ""
+    if fallback_text:
+        return fallback_text
+    return default_value
 
 
 def resolve_infrared_query_device_ids(configured: Optional[List[int]]) -> List[int]:
