@@ -134,19 +134,44 @@ class AgvPoseRefinerNode(Node):
 
         # ---- Build layers ---------------------------------------------------
         publish_tf = coerce_bool(self.get_parameter("publish_tf").value)
+        shared_serial_port = str(self.get_parameter("serial_port").value)
+        shared_serial_baudrate = int(self.get_parameter("serial_baudrate").value)
+
+        if infrared_serial_port != shared_serial_port:
+            self.get_logger().warn(
+                "infrared_serial_port is ignored; infrared queries share serial_port "
+                f"({shared_serial_port})"
+            )
+        if infrared_serial_baudrate != shared_serial_baudrate:
+            self.get_logger().warn(
+                "infrared_serial_baudrate is ignored; infrared queries share "
+                f"serial_baudrate ({shared_serial_baudrate})"
+            )
 
         self.solve_layer = PoseSolveLayer(
             logger=self.get_logger(),
             sensors_config=sensors_config,
             solver_config=solver_config,
         )
+        self._latest_coarse_pose_lock = threading.Lock()
+        self._latest_coarse_x: Optional[Tuple[float, Time]] = None
+        self.infrared_layer = InfraredReceiveLayer(
+            node=self,
+            config=infrared_config,
+            query_device_ids=infrared_query_device_ids,
+            latest_coarse_x_provider=self._get_latest_coarse_x_snapshot,
+            serial_port=shared_serial_port,
+            serial_baudrate=shared_serial_baudrate,
+            serial_response_timeout_sec=infrared_serial_response_timeout_sec,
+            serial_poll_rate_hz=infrared_serial_poll_rate_hz,
+        )
         self.receive_layer = SerialReceiveLayer(
             node=self,
             sensor_mounts=self.solve_layer.sensor_mounts,
             sensor_map=sensor_map,
             query_device_ids=query_device_ids,
-            serial_port=self.get_parameter("serial_port").value,
-            serial_baudrate=self.get_parameter("serial_baudrate").value,
+            serial_port=shared_serial_port,
+            serial_baudrate=shared_serial_baudrate,
             serial_timeout_sec=self.get_parameter("serial_timeout_sec").value,
             serial_min_publish_interval_ms=self.get_parameter(
                 "serial_min_publish_interval_ms"
@@ -164,18 +189,7 @@ class AgvPoseRefinerNode(Node):
             serial_expect_matching_device_id=self.get_parameter(
                 "serial_expect_matching_device_id"
             ).value,
-        )
-        self._latest_coarse_pose_lock = threading.Lock()
-        self._latest_coarse_x: Optional[Tuple[float, Time]] = None
-        self.infrared_layer = InfraredReceiveLayer(
-            node=self,
-            config=infrared_config,
-            query_device_ids=infrared_query_device_ids,
-            latest_coarse_x_provider=self._get_latest_coarse_x_snapshot,
-            serial_port=infrared_serial_port,
-            serial_baudrate=infrared_serial_baudrate,
-            serial_response_timeout_sec=infrared_serial_response_timeout_sec,
-            serial_poll_rate_hz=infrared_serial_poll_rate_hz,
+            infrared_layer=self.infrared_layer,
         )
         self.publish_layer = ResultPublishLayer(
             node=self,
@@ -197,13 +211,12 @@ class AgvPoseRefinerNode(Node):
             30,
         )
         self.receive_layer.start()
-        self.infrared_layer.start()
         self.get_logger().info(
             "agv_pose_refiner started "
             f"(serial={self.receive_layer.serial_port}@{self.receive_layer.serial_baudrate}, "
             f"serial_query_ids={query_device_ids}, "
             f"serial_max_range_frame_age_ms={self._serial_max_range_frame_age_ms:.1f}, "
-            f"infrared={self.infrared_layer.serial_port}@{self.infrared_layer.serial_baudrate}, "
+            f"infrared_shared_serial={self.infrared_layer.serial_port}@{self.infrared_layer.serial_baudrate}, "
             f"lidar={lidar_pose_topic}, scene={self.solve_layer.active_scene})"
         )
 
@@ -286,7 +299,6 @@ class AgvPoseRefinerNode(Node):
             return self._latest_coarse_x
 
     def destroy_node(self) -> bool:
-        self.infrared_layer.stop()
         self.receive_layer.stop()
         return super().destroy_node()
 

@@ -12,6 +12,10 @@ from rclpy.node import Node
 from rclpy.time import Time
 
 from .common import (
+    INFRARED_DATA_COMMAND,
+    INFRARED_DATA_FRAME_LEN,
+    INFRARED_QUERY_COMMAND,
+    INFRARED_QUERY_FRAME_LEN,
     SENSOR_ORDER,
     STP23L_DATA_COMMAND,
     STP23L_DATA_FRAME_LEN,
@@ -26,6 +30,7 @@ from .common import (
     abs_time_diff_ms,
     crc16_modbus,
 )
+from .infrared import InfraredFrame
 
 try:
     import serial
@@ -51,6 +56,7 @@ class SerialReceiveLayer:
         serial_decode_log_enabled: bool,
         serial_decode_log_interval_ms: float,
         serial_expect_matching_device_id: bool,
+        infrared_layer: Optional[Any] = None,
     ) -> None:
         self._node = node
         self._logger = node.get_logger()
@@ -68,6 +74,7 @@ class SerialReceiveLayer:
         self.serial_decode_log_interval_ms = max(0.0, float(serial_decode_log_interval_ms))
         self.serial_expect_matching_device_id = serial_expect_matching_device_id
         self.serial_query_device_ids = list(query_device_ids)
+        self._infrared_layer = infrared_layer
 
         self._latest_range_frame: Optional[RangeFrame] = None
         self._latest_range_frame_lock = threading.Lock()
@@ -88,6 +95,7 @@ class SerialReceiveLayer:
         self._serial_thread: Optional[threading.Thread] = None
         self._serial_stop_event = threading.Event()
         self._serial_port_handle: Any = None
+        self._last_poll_cycle_monotonic = 0.0
 
     def start(self) -> None:
         if serial is None:
@@ -199,7 +207,9 @@ class SerialReceiveLayer:
                     )
                     while not self._serial_stop_event.is_set():
                         self._drain_serial_input(handle)
-                        self._poll_cycle(handle)
+                        self._maybe_send_infrared_queries(handle)
+                        self._maybe_poll_cycle(handle)
+                        self._serial_stop_event.wait(0.0005)
             except SerialException as exc:
                 if not self._serial_stop_event.is_set():
                     self._logger.error(
@@ -225,7 +235,10 @@ class SerialReceiveLayer:
             self._pending_board_frames.clear()
             self._latest_board_frames.clear()
             self._last_decode_log_stamp_ns_by_device.clear()
+            self._last_poll_cycle_monotonic = 0.0
         self._clear_latest_range_state()
+        if self._infrared_layer is not None:
+            self._infrared_layer.reset_shared_serial_state()
         for reset_name in ("reset_input_buffer", "reset_output_buffer"):
             reset_fn = getattr(handle, reset_name, None)
             if reset_fn is None:
@@ -258,12 +271,26 @@ class SerialReceiveLayer:
 
     # ---- Polling cycle ------------------------------------------------------
 
-    def _poll_cycle(self, handle: Any) -> None:
-        if not self.serial_query_device_ids:
-            self._serial_stop_event.wait(0.1)
+    def _maybe_send_infrared_queries(self, handle: Any) -> None:
+        if self._infrared_layer is None:
             return
+        self._infrared_layer.maybe_send_queries(handle)
 
-        cycle_start = time.monotonic()
+    def _maybe_poll_cycle(self, handle: Any) -> None:
+        if not self.serial_query_device_ids:
+            return
+        if self.serial_poll_rate_hz > 0.0:
+            cycle_period_sec = 1.0 / self.serial_poll_rate_hz
+            now_monotonic = time.monotonic()
+            if (
+                self._last_poll_cycle_monotonic > 0.0
+                and now_monotonic - self._last_poll_cycle_monotonic < cycle_period_sec
+            ):
+                return
+            self._last_poll_cycle_monotonic = now_monotonic
+        self._poll_cycle(handle)
+
+    def _poll_cycle(self, handle: Any) -> None:
         self._clear_pending_query_responses()
         cycle_board_frames: Dict[int, BoardFrame] = {}
 
@@ -293,14 +320,6 @@ class SerialReceiveLayer:
                 cycle_board_frames=cycle_board_frames,
             )
 
-        if self.serial_poll_rate_hz <= 0.0:
-            return
-        cycle_period_sec = 1.0 / self.serial_poll_rate_hz
-        elapsed_sec = time.monotonic() - cycle_start
-        remaining_sec = cycle_period_sec - elapsed_sec
-        if remaining_sec > 0.0:
-            self._serial_stop_event.wait(remaining_sec)
-
     def _build_query_frame(self, device_id: int) -> bytes:
         payload = bytes([0x5A, 0xA5, STP23L_QUERY_COMMAND, device_id & 0xFF])
         crc = crc16_modbus(payload)
@@ -318,6 +337,7 @@ class SerialReceiveLayer:
                 if time.monotonic() >= deadline:
                     return None
 
+            self._maybe_send_infrared_queries(handle)
             self._drain_serial_input(handle)
 
             with self._parser_lock:
@@ -365,6 +385,36 @@ class SerialReceiveLayer:
                     del self._serial_byte_buffer[:1]
                 continue
 
+            if command == INFRARED_QUERY_COMMAND:
+                if len(self._serial_byte_buffer) < INFRARED_QUERY_FRAME_LEN:
+                    return produced_frame
+                if self._is_valid_infrared_query_echo(bytes(self._serial_byte_buffer[:6])):
+                    del self._serial_byte_buffer[:INFRARED_QUERY_FRAME_LEN]
+                else:
+                    del self._serial_byte_buffer[:1]
+                continue
+
+            if command == INFRARED_DATA_COMMAND:
+                if len(self._serial_byte_buffer) < INFRARED_DATA_FRAME_LEN:
+                    return produced_frame
+                frame_bytes = bytes(self._serial_byte_buffer[:INFRARED_DATA_FRAME_LEN])
+                payload_crc = int.from_bytes(frame_bytes[10:12], byteorder="little")
+                expected_crc = crc16_modbus(frame_bytes[:10])
+                if payload_crc != expected_crc:
+                    self._logger.warn(
+                        "Dropped infrared frame due to CRC mismatch "
+                        f"(expected=0x{expected_crc:04X}, got=0x{payload_crc:04X})"
+                    )
+                    del self._serial_byte_buffer[:1]
+                    continue
+                del self._serial_byte_buffer[:INFRARED_DATA_FRAME_LEN]
+                if self._infrared_layer is not None:
+                    self._infrared_layer.handle_infrared_frame(
+                        self._decode_infrared_frame(frame_bytes)
+                    )
+                produced_frame = True
+                continue
+
             if command != STP23L_DATA_COMMAND:
                 del self._serial_byte_buffer[:1]
                 continue
@@ -394,6 +444,22 @@ class SerialReceiveLayer:
         payload_crc = int.from_bytes(frame_bytes[4:6], byteorder="little")
         expected_crc = crc16_modbus(frame_bytes[:4])
         return payload_crc == expected_crc
+
+    def _is_valid_infrared_query_echo(self, frame_bytes: bytes) -> bool:
+        if len(frame_bytes) != INFRARED_QUERY_FRAME_LEN:
+            return False
+        payload_crc = int.from_bytes(frame_bytes[4:6], byteorder="little")
+        expected_crc = crc16_modbus(frame_bytes[:4])
+        return payload_crc == expected_crc
+
+    def _decode_infrared_frame(self, frame_bytes: bytes) -> InfraredFrame:
+        return InfraredFrame(
+            rx_stamp=self._clock.now(),
+            device_id=int(frame_bytes[3]),
+            report_type=int(frame_bytes[4]),
+            raw_byte=int(frame_bytes[5]),
+            device_timestamp_ms=int.from_bytes(frame_bytes[6:10], byteorder="little"),
+        )
 
     def _record_board_frame_locked(self, board_frame: BoardFrame) -> None:
         self._pending_board_frames[board_frame.device_id] = board_frame

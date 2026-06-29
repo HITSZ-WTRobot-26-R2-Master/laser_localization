@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import unittest
 
 from _module_stubs import install_test_stubs
@@ -67,6 +68,18 @@ class DummyNode:
 
     def get_clock(self) -> DummyClock:
         return self.clock
+
+
+class DummyHandle:
+    def __init__(self) -> None:
+        self.writes = []
+        self.flush_count = 0
+
+    def write(self, payload: bytes) -> None:
+        self.writes.append(payload)
+
+    def flush(self) -> None:
+        self.flush_count += 1
 
 
 class TestInfraredConfig(unittest.TestCase):
@@ -401,9 +414,8 @@ class TestInfraredEventProcessor(unittest.TestCase):
 
 
 class TestInfraredReceiveLayer(unittest.TestCase):
-    def test_publish_event_emits_topic_and_debug_json(self) -> None:
-        node = DummyNode()
-        layer = InfraredReceiveLayer(
+    def _build_layer(self, node: DummyNode) -> InfraredReceiveLayer:
+        return InfraredReceiveLayer(
             node=node,
             config=InfraredConfig(
                 active_scene="mode_red",
@@ -424,11 +436,15 @@ class TestInfraredReceiveLayer(unittest.TestCase):
             ),
             query_device_ids=[3, 4],
             latest_coarse_x_provider=lambda: (1.0, Time(nanoseconds=1_000_000_000)),
-            serial_port="/dev/infrared_serial",
+            serial_port="/dev/laser_serial",
             serial_baudrate=115200,
             serial_response_timeout_sec=0.02,
             serial_poll_rate_hz=100.0,
         )
+
+    def test_publish_event_emits_topic_and_debug_json(self) -> None:
+        node = DummyNode()
+        layer = self._build_layer(node)
 
         layer._handle_frame_locked(
             InfraredFrame(
@@ -464,32 +480,7 @@ class TestInfraredReceiveLayer(unittest.TestCase):
 
     def test_snapshot_status_includes_shared_raw_byte(self) -> None:
         node = DummyNode()
-        layer = InfraredReceiveLayer(
-            node=node,
-            config=InfraredConfig(
-                active_scene="mode_red",
-                use_topic="/infrared",
-                debug_topic="/infrared_debug",
-                max_coarse_pose_age_ms=500.0,
-                scenes={
-                    "mode_red": (
-                        InfraredRule(
-                            x_min=0.0,
-                            x_max=2.0,
-                            raw_bytes=(0x11,),
-                            mapped_type="spear_done_continue",
-                            send_to_topic=0x01,
-                        ),
-                    )
-                },
-            ),
-            query_device_ids=[3, 4],
-            latest_coarse_x_provider=lambda: (1.0, Time(nanoseconds=1_000_000_000)),
-            serial_port="/dev/infrared_serial",
-            serial_baudrate=115200,
-            serial_response_timeout_sec=0.02,
-            serial_poll_rate_hz=100.0,
-        )
+        layer = self._build_layer(node)
 
         layer._handle_frame_locked(
             InfraredFrame(
@@ -514,6 +505,20 @@ class TestInfraredReceiveLayer(unittest.TestCase):
         self.assertEqual(snapshot["shared_last_event"]["raw_byte"], 0x11)
         self.assertEqual(snapshot["shared_last_event"]["source_device_id"], 3)
         self.assertEqual(snapshot["shared_last_event"]["aligned_ts_ms"], 1010)
+
+    def test_shared_serial_query_send_uses_one_handle(self) -> None:
+        node = DummyNode()
+        layer = self._build_layer(node)
+        handle = DummyHandle()
+
+        layer.maybe_send_queries(handle)
+        self.assertEqual(len(handle.writes), 2)
+        self.assertEqual(handle.flush_count, 1)
+        self.assertTrue(all(payload[:3] == b"\x5A\xA5\x02" for payload in handle.writes))
+
+        layer._last_poll_cycle_monotonic = time.monotonic()
+        layer.maybe_send_queries(handle)
+        self.assertEqual(len(handle.writes), 2)
 
 
 if __name__ == "__main__":

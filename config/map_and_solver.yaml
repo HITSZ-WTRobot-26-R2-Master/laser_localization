@@ -23,6 +23,13 @@ scene_manager:
   active_scene: mode_red   ## 红方
   allow_runtime_switch: false
 
+
+
+
+
+
+
+
 infrared:
   max_coarse_pose_age_ms: 500.0
   scenes:
