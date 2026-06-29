@@ -77,7 +77,10 @@ class InfraredProcessResult:
     event: Optional[InfraredMappedEvent] = None
 
 
-def parse_infrared_config(solver_config: Dict[str, Any]) -> InfraredConfig:
+def parse_infrared_config(
+    solver_config: Dict[str, Any],
+    runtime_config: Optional[Dict[str, Any]] = None,
+) -> InfraredConfig:
     scene_manager = solver_config.get("scene_manager", {})
     if not isinstance(scene_manager, dict):
         raise RuntimeError("scene_manager must be a mapping")
@@ -89,8 +92,18 @@ def parse_infrared_config(solver_config: Dict[str, Any]) -> InfraredConfig:
     if not isinstance(infrared_cfg, dict):
         raise RuntimeError("infrared must be a mapping")
 
-    use_topic = str(infrared_cfg.get("use_topic", "")).strip()
-    debug_topic = str(infrared_cfg.get("debug_topic", "")).strip()
+    runtime_cfg = runtime_config or {}
+    if not isinstance(runtime_cfg, dict):
+        raise RuntimeError("infrared runtime_config must be a mapping")
+
+    use_topic = _resolve_optional_runtime_string(
+        runtime_cfg.get("use_topic"),
+        infrared_cfg.get("use_topic"),
+    )
+    debug_topic = _resolve_optional_runtime_string(
+        runtime_cfg.get("debug_topic"),
+        infrared_cfg.get("debug_topic"),
+    )
     if not use_topic:
         raise RuntimeError("infrared.use_topic must be configured")
     if not debug_topic:
@@ -186,6 +199,13 @@ def parse_infrared_config(solver_config: Dict[str, Any]) -> InfraredConfig:
         max_coarse_pose_age_ms=max_coarse_pose_age_ms,
         scenes=parsed_scenes,
     )
+
+
+def _resolve_optional_runtime_string(runtime_value: Any, fallback_value: Any) -> str:
+    runtime_text = str(runtime_value).strip() if runtime_value is not None else ""
+    if runtime_text:
+        return runtime_text
+    return str(fallback_value).strip() if fallback_value is not None else ""
 
 
 def resolve_infrared_query_device_ids(configured: Optional[List[int]]) -> List[int]:

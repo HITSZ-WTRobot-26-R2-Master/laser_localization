@@ -74,6 +74,8 @@ class AgvPoseRefinerNode(Node):
         self.declare_parameter("infrared_serial_response_timeout_sec", 0.02)
         self.declare_parameter("infrared_serial_poll_rate_hz", 100.0)
         self.declare_parameter("infrared_query_device_ids", [3, 4])
+        self.declare_parameter("infrared_use_topic", "")
+        self.declare_parameter("infrared_debug_topic", "")
 
         # ---- Solver ---------------------------------------------------------
         self.declare_parameter("world_frame_id", "map")
@@ -97,10 +99,17 @@ class AgvPoseRefinerNode(Node):
             self.get_parameter("serial_max_range_frame_age_ms").value,
             serial_poll_rate_hz,
         )
-        infrared_config = parse_infrared_config(solver_config)
         infrared_runtime_config = solver_config.get("infrared", {})
         if not isinstance(infrared_runtime_config, dict):
             infrared_runtime_config = {}
+        infrared_runtime_overrides = {
+            "use_topic": self.get_parameter("infrared_use_topic").value,
+            "debug_topic": self.get_parameter("infrared_debug_topic").value,
+        }
+        infrared_config = parse_infrared_config(
+            solver_config,
+            runtime_config=infrared_runtime_overrides,
+        )
         infrared_query_device_ids = resolve_infrared_query_device_ids(
             infrared_runtime_config.get(
                 "query_device_ids",

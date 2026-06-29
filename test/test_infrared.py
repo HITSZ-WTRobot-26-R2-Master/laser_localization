@@ -98,6 +98,64 @@ class TestInfraredConfig(unittest.TestCase):
         self.assertEqual(config.scenes["mode_red"][0].raw_bytes, (0x11, 0x22))
         self.assertEqual(config.scenes["mode_red"][0].send_to_topic, 0x01)
 
+    def test_parse_infrared_config_accepts_runtime_topic_overrides(self) -> None:
+        config = parse_infrared_config(
+            {
+                "scene_manager": {"active_scene": "mode_red"},
+                "infrared": {
+                    "use_topic": "/infrared_legacy",
+                    "debug_topic": "/infrared_debug_legacy",
+                    "scenes": {
+                        "mode_red": {
+                            "rules": [
+                                {
+                                    "x_range": [0.0, 2.0],
+                                    "raw_bytes": [0x11],
+                                    "mapped_type": "test",
+                                    "send_to_topic": "0x01",
+                                }
+                            ]
+                        }
+                    },
+                },
+            },
+            runtime_config={
+                "use_topic": "/infrared",
+                "debug_topic": "/infrared_debug",
+            },
+        )
+        self.assertEqual(config.use_topic, "/infrared")
+        self.assertEqual(config.debug_topic, "/infrared_debug")
+
+    def test_parse_infrared_config_falls_back_when_runtime_topics_empty(self) -> None:
+        config = parse_infrared_config(
+            {
+                "scene_manager": {"active_scene": "mode_red"},
+                "infrared": {
+                    "use_topic": "/infrared",
+                    "debug_topic": "/infrared_debug",
+                    "scenes": {
+                        "mode_red": {
+                            "rules": [
+                                {
+                                    "x_range": [0.0, 2.0],
+                                    "raw_bytes": [0x11],
+                                    "mapped_type": "test",
+                                    "send_to_topic": "0x01",
+                                }
+                            ]
+                        }
+                    },
+                },
+            },
+            runtime_config={
+                "use_topic": "",
+                "debug_topic": " ",
+            },
+        )
+        self.assertEqual(config.use_topic, "/infrared")
+        self.assertEqual(config.debug_topic, "/infrared_debug")
+
 
 class TestInfraredEventProcessor(unittest.TestCase):
     def setUp(self) -> None:
