@@ -1,44 +1,24 @@
 agv_pose_refiner:
   ros__parameters:
-    # 输入粗定位位姿话题。
     lidar_pose_topic: "/pose/lidar"
-    # 输出激光精定位话题。
     laser_pose_topic: "/pose/laser"
-    # 输出激光状态话题。
     laser_status_topic: "/laser_status"
-    # TF 父坐标系。
     tf_parent_frame: "map"
-    # TF 子坐标系。
     tf_child_frame: "base_link"
-    # 是否发布 map -> base_link 的 TF。
     publish_tf: true
-    # 激光串口路径。
     serial_port: "/dev/laser_serial"
-    # 激光串口波特率。
     serial_baudrate: 115200
-    # 激光输入格式。
     lidar_input_format: "custom_pose_fields"
-    # 激光输入消息类型。
     lidar_message_type: "interfaces.msg.R2Pose"
-    # 激光串口超时时间。
     serial_timeout_sec: 0.02
-    # 激光最小发布间隔。
     serial_min_publish_interval_ms: 5.0
-    # 激光轮询频率。
     serial_poll_rate_hz: 10.0
-    # 激光响应超时时间。
     serial_response_timeout_sec: 0.02
-    # 是否启用激光解码日志。
     serial_decode_log_enabled: true
-    # 激光解码日志间隔。
     serial_decode_log_interval_ms: 0
-    # 是否要求匹配激光设备 ID。
     serial_expect_matching_device_id: true
-    # 激光查询设备 ID 列表。
     serial_query_device_ids: [1, 2]
-    # 红外输出话题，留空则回退到 map_and_solver.yaml。
     infrared_use_topic: "/infrared"
-    # 红外调试话题，留空则回退到 map_and_solver.yaml。
     infrared_debug_topic: "/infrared_debug"
-    # 红外查询设备 ID 列表。
     infrared_query_device_ids: [3, 4]
+    infrared_serial_poll_rate_hz: 100.0
