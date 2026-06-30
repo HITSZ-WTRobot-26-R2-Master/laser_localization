@@ -593,6 +593,15 @@ class TestInfraredReceiveLayer(unittest.TestCase):
         layer.maybe_send_queries(handle)
         self.assertEqual(len(handle.writes), 2)
 
+    def test_query_frame_crc_matches_modbus_sample(self) -> None:
+        node = DummyNode()
+        layer = self._build_layer(node)
+
+        self.assertEqual(
+            layer._build_query_frame(3),
+            bytes([0x5A, 0xA5, 0x02, 0x03, 0x43, 0xBE]),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -198,6 +198,12 @@ class TestSerialReceiveLayer(unittest.TestCase):
         self.assertFalse(produced)
         self.assertEqual(self.layer._serial_byte_buffer, bytearray())
 
+    def test_infrared_query_crc_matches_modbus_sample(self) -> None:
+        self.assertEqual(
+            self._build_query_frame(INFRARED_QUERY_COMMAND, device_id=3),
+            bytes([0x5A, 0xA5, 0x02, 0x03, 0x43, 0xBE]),
+        )
+
     def _build_query_frame(self, command: int, *, device_id: int) -> bytes:
         payload = bytes([0x5A, 0xA5, command, device_id & 0xFF])
         crc = crc16_modbus(payload)
