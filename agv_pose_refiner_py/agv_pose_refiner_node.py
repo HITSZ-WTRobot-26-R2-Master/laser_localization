@@ -76,6 +76,7 @@ class AgvPoseRefinerNode(Node):
         self.declare_parameter("infrared_query_device_ids", [3, 4])
         self.declare_parameter("infrared_use_topic", "")
         self.declare_parameter("infrared_debug_topic", "")
+        self.declare_parameter("infrared_raw_topic", "")
 
         # ---- Solver ---------------------------------------------------------
         self.declare_parameter("world_frame_id", "map")
@@ -102,6 +103,7 @@ class AgvPoseRefinerNode(Node):
         infrared_runtime_overrides = {
             "use_topic": self.get_parameter("infrared_use_topic").value,
             "debug_topic": self.get_parameter("infrared_debug_topic").value,
+            "raw_topic": self.get_parameter("infrared_raw_topic").value,
         }
         infrared_config = parse_infrared_config(
             solver_config,

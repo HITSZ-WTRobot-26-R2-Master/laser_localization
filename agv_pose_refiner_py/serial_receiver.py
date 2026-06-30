@@ -281,12 +281,16 @@ class SerialReceiveLayer:
             return False
 
         self._clear_pending_infrared_query_responses()
+        min_device_timestamp_ms = (
+            self._infrared_layer.capture_query_device_timestamp_floor(device_id)
+        )
         handle.write(self._infrared_layer.build_query_frame(device_id))
         handle.flush()
         frame = self._wait_for_infrared_response_active(
             handle,
             device_id,
             self._infrared_layer.serial_response_timeout_sec,
+            min_device_timestamp_ms,
         )
         if frame is None:
             buffered_len, pending_board_ids, pending_infrared_ids = (
@@ -380,6 +384,7 @@ class SerialReceiveLayer:
         handle: Any,
         expected_device_id: int,
         response_timeout_sec: float,
+        min_device_timestamp_ms: Optional[int],
     ) -> Optional[InfraredFrame]:
         deadline = time.monotonic() + max(0.0, float(response_timeout_sec))
         while not self._serial_stop_event.is_set():
@@ -387,7 +392,9 @@ class SerialReceiveLayer:
                 infrared_frame = self._pending_infrared_frames.pop(
                     expected_device_id, None
                 )
-                if infrared_frame is not None:
+                if self._is_fresh_infrared_frame(
+                    infrared_frame, min_device_timestamp_ms
+                ):
                     return infrared_frame
                 if time.monotonic() >= deadline:
                     return None
@@ -398,7 +405,9 @@ class SerialReceiveLayer:
                 infrared_frame = self._pending_infrared_frames.pop(
                     expected_device_id, None
                 )
-                if infrared_frame is not None:
+                if self._is_fresh_infrared_frame(
+                    infrared_frame, min_device_timestamp_ms
+                ):
                     return infrared_frame
                 if time.monotonic() >= deadline:
                     return None
@@ -406,6 +415,17 @@ class SerialReceiveLayer:
             time.sleep(0.0005)
 
         return None
+
+    def _is_fresh_infrared_frame(
+        self,
+        infrared_frame: Optional[InfraredFrame],
+        min_device_timestamp_ms: Optional[int],
+    ) -> bool:
+        if infrared_frame is None:
+            return False
+        if min_device_timestamp_ms is None:
+            return True
+        return infrared_frame.device_timestamp_ms >= min_device_timestamp_ms
 
     def _snapshot_rx_debug_state(self) -> Tuple[int, List[int], List[int]]:
         with self._parser_lock:

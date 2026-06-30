@@ -42,6 +42,7 @@ class InfraredReceiveLayer:
 
         self._topic_pub = node.create_publisher(UInt8, config.use_topic, 10)
         self._debug_pub = node.create_publisher(String, config.debug_topic, 10)
+        self._raw_pub = node.create_publisher(UInt8, config.raw_topic, 10)
         self._processor = InfraredEventProcessor(
             config=config,
             latest_coarse_x_provider=latest_coarse_x_provider,
@@ -116,7 +117,30 @@ class InfraredReceiveLayer:
         crc = crc16_modbus(payload)
         return payload + crc.to_bytes(2, byteorder="little")
 
+    def capture_query_device_timestamp_floor(self, device_id: int) -> Optional[int]:
+        with self._state_lock:
+            state = self._processor.snapshot_board_state(device_id)
+            if state is None:
+                return None
+
+            candidate_floor: Optional[int] = None
+            if state.last_device_timestamp_ms is not None:
+                candidate_floor = int(state.last_device_timestamp_ms) + 1
+
+            if state.synced and state.sync_offset_ms is not None:
+                host_now_ms = int(self._clock.now().nanoseconds / 1e6)
+                estimated_device_now_ms = host_now_ms - int(state.sync_offset_ms)
+                if candidate_floor is None:
+                    candidate_floor = estimated_device_now_ms
+                else:
+                    candidate_floor = max(candidate_floor, estimated_device_now_ms)
+
+            return candidate_floor
+
     def handle_infrared_frame(self, frame: InfraredFrame) -> None:
+        raw_msg = UInt8()
+        raw_msg.data = int(frame.raw_byte)
+        self._raw_pub.publish(raw_msg)
         with self._state_lock:
             self._handle_frame_locked(frame)
 

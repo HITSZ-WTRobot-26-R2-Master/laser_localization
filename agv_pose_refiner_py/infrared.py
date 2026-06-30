@@ -28,6 +28,7 @@ class InfraredConfig:
     active_scene: str
     use_topic: str
     debug_topic: str
+    raw_topic: str
     max_coarse_pose_age_ms: float
     scenes: Dict[str, Tuple[InfraredRule, ...]]
 
@@ -111,10 +112,17 @@ def parse_infrared_config(
         infrared_cfg.get("debug_topic"),
         "/infrared_debug",
     )
+    raw_topic = _resolve_optional_runtime_string(
+        runtime_cfg.get("raw_topic"),
+        infrared_cfg.get("raw_topic"),
+        "/infrared_raw",
+    )
     if not use_topic:
         raise RuntimeError("infrared.use_topic must be configured")
     if not debug_topic:
         raise RuntimeError("infrared.debug_topic must be configured")
+    if not raw_topic:
+        raise RuntimeError("infrared.raw_topic must be configured")
 
     max_coarse_pose_age_ms = float(
         infrared_cfg.get("max_coarse_pose_age_ms", 500.0)
@@ -203,6 +211,7 @@ def parse_infrared_config(
         active_scene=active_scene,
         use_topic=use_topic,
         debug_topic=debug_topic,
+        raw_topic=raw_topic,
         max_coarse_pose_age_ms=max_coarse_pose_age_ms,
         scenes=parsed_scenes,
     )

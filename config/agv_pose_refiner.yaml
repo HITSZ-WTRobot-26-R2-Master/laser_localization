@@ -20,6 +20,7 @@ agv_pose_refiner:
     serial_query_device_ids: [1, 2]
     infrared_use_topic: "/infrared"
     infrared_debug_topic: "/infrared_debug"
+    infrared_raw_topic: "/infrared_raw"
     infrared_query_device_ids: [3, 4]
     infrared_serial_response_timeout_sec: 0.002
     infrared_serial_poll_rate_hz: 100.0
