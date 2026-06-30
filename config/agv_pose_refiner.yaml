@@ -10,10 +10,10 @@ agv_pose_refiner:
     serial_baudrate: 115200
     lidar_input_format: "custom_pose_fields"
     lidar_message_type: "interfaces.msg.R2Pose"
-    serial_timeout_sec: 0.02
+    serial_timeout_sec: 0.001
     serial_min_publish_interval_ms: 5.0
     serial_poll_rate_hz: 10.0
-    serial_response_timeout_sec: 0.02
+    serial_response_timeout_sec: 0.010
     serial_decode_log_enabled: true
     serial_decode_log_interval_ms: 0
     serial_expect_matching_device_id: true
@@ -21,4 +21,5 @@ agv_pose_refiner:
     infrared_use_topic: "/infrared"
     infrared_debug_topic: "/infrared_debug"
     infrared_query_device_ids: [3, 4]
+    infrared_serial_response_timeout_sec: 0.002
     infrared_serial_poll_rate_hz: 100.0

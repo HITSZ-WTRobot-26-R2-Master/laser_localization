@@ -88,6 +88,7 @@ class SerialReceiveLayer:
 
         self._parser_lock = threading.Lock()
         self._pending_board_frames: Dict[int, BoardFrame] = {}
+        self._pending_infrared_frames: Dict[int, InfraredFrame] = {}
         self._latest_board_frames: Dict[int, BoardFrame] = {}
         self._last_decode_log_stamp_ns_by_device: Dict[int, int] = {}
         self._serial_byte_buffer = bytearray()
@@ -182,7 +183,7 @@ class SerialReceiveLayer:
                 handle = serial.Serial(
                     port=self.serial_port,
                     baudrate=self.serial_baudrate,
-                    timeout=self.serial_response_timeout_sec,
+                    timeout=self.serial_timeout_sec,
                 )
             except SerialException as exc:
                 self._logger.error(
@@ -207,8 +208,8 @@ class SerialReceiveLayer:
                     )
                     while not self._serial_stop_event.is_set():
                         self._drain_serial_input(handle)
-                        self._maybe_send_infrared_queries(handle)
-                        self._maybe_poll_cycle(handle)
+                        if not self._maybe_poll_cycle(handle):
+                            self._maybe_poll_infrared_transaction(handle)
                         self._serial_stop_event.wait(0.0005)
             except SerialException as exc:
                 if not self._serial_stop_event.is_set():
@@ -233,6 +234,7 @@ class SerialReceiveLayer:
         with self._parser_lock:
             self._serial_byte_buffer.clear()
             self._pending_board_frames.clear()
+            self._pending_infrared_frames.clear()
             self._latest_board_frames.clear()
             self._last_decode_log_stamp_ns_by_device.clear()
             self._last_poll_cycle_monotonic = 0.0
@@ -271,14 +273,36 @@ class SerialReceiveLayer:
 
     # ---- Polling cycle ------------------------------------------------------
 
-    def _maybe_send_infrared_queries(self, handle: Any) -> None:
+    def _maybe_poll_infrared_transaction(self, handle: Any) -> bool:
         if self._infrared_layer is None:
-            return
-        self._infrared_layer.maybe_send_queries(handle)
+            return False
+        device_id = self._infrared_layer.claim_next_query_device_id()
+        if device_id is None:
+            return False
 
-    def _maybe_poll_cycle(self, handle: Any) -> None:
+        self._clear_pending_infrared_query_responses()
+        handle.write(self._infrared_layer.build_query_frame(device_id))
+        handle.flush()
+        frame = self._wait_for_infrared_response_active(
+            handle,
+            device_id,
+            self._infrared_layer.serial_response_timeout_sec,
+        )
+        if frame is None:
+            buffered_len, pending_board_ids, pending_infrared_ids = (
+                self._snapshot_rx_debug_state()
+            )
+            self._logger.warn(
+                f"No infrared response for device_id={device_id} within "
+                f"{self._infrared_layer.serial_response_timeout_sec:.3f}s "
+                f"(buffered={buffered_len}B, stp23l_pending={pending_board_ids}, "
+                f"infrared_pending={pending_infrared_ids})"
+            )
+        return True
+
+    def _maybe_poll_cycle(self, handle: Any) -> bool:
         if not self.serial_query_device_ids:
-            return
+            return False
         if self.serial_poll_rate_hz > 0.0:
             cycle_period_sec = 1.0 / self.serial_poll_rate_hz
             now_monotonic = time.monotonic()
@@ -286,9 +310,10 @@ class SerialReceiveLayer:
                 self._last_poll_cycle_monotonic > 0.0
                 and now_monotonic - self._last_poll_cycle_monotonic < cycle_period_sec
             ):
-                return
+                return False
             self._last_poll_cycle_monotonic = now_monotonic
         self._poll_cycle(handle)
+        return True
 
     def _poll_cycle(self, handle: Any) -> None:
         self._clear_pending_query_responses()
@@ -301,7 +326,7 @@ class SerialReceiveLayer:
             handle.flush()
             board_frame = self._wait_for_response_active(handle, device_id)
             if board_frame is None:
-                buffered_len, pending_ids = self._snapshot_rx_debug_state()
+                buffered_len, pending_ids, _ = self._snapshot_rx_debug_state()
                 self._logger.warn(
                     f"No STP23L response for device_id={device_id} within "
                     f"{self.serial_response_timeout_sec:.3f}s "
@@ -337,7 +362,6 @@ class SerialReceiveLayer:
                 if time.monotonic() >= deadline:
                     return None
 
-            self._maybe_send_infrared_queries(handle)
             self._drain_serial_input(handle)
 
             with self._parser_lock:
@@ -351,14 +375,54 @@ class SerialReceiveLayer:
 
         return None
 
-    def _snapshot_rx_debug_state(self) -> Tuple[int, List[int]]:
+    def _wait_for_infrared_response_active(
+        self,
+        handle: Any,
+        expected_device_id: int,
+        response_timeout_sec: float,
+    ) -> Optional[InfraredFrame]:
+        deadline = time.monotonic() + max(0.0, float(response_timeout_sec))
+        while not self._serial_stop_event.is_set():
+            with self._parser_lock:
+                infrared_frame = self._pending_infrared_frames.pop(
+                    expected_device_id, None
+                )
+                if infrared_frame is not None:
+                    return infrared_frame
+                if time.monotonic() >= deadline:
+                    return None
+
+            self._drain_serial_input(handle)
+
+            with self._parser_lock:
+                infrared_frame = self._pending_infrared_frames.pop(
+                    expected_device_id, None
+                )
+                if infrared_frame is not None:
+                    return infrared_frame
+                if time.monotonic() >= deadline:
+                    return None
+
+            time.sleep(0.0005)
+
+        return None
+
+    def _snapshot_rx_debug_state(self) -> Tuple[int, List[int], List[int]]:
         with self._parser_lock:
-            return len(self._serial_byte_buffer), sorted(self._pending_board_frames.keys())
+            return (
+                len(self._serial_byte_buffer),
+                sorted(self._pending_board_frames.keys()),
+                sorted(self._pending_infrared_frames.keys()),
+            )
 
     def _clear_pending_query_responses(self) -> None:
         with self._parser_lock:
             for device_id in self.serial_query_device_ids:
                 self._pending_board_frames.pop(device_id, None)
+
+    def _clear_pending_infrared_query_responses(self) -> None:
+        with self._parser_lock:
+            self._pending_infrared_frames.clear()
 
     # ---- Buffer parser ------------------------------------------------------
 
@@ -408,10 +472,9 @@ class SerialReceiveLayer:
                     del self._serial_byte_buffer[:1]
                     continue
                 del self._serial_byte_buffer[:INFRARED_DATA_FRAME_LEN]
-                if self._infrared_layer is not None:
-                    self._infrared_layer.handle_infrared_frame(
-                        self._decode_infrared_frame(frame_bytes)
-                    )
+                self._record_infrared_frame_locked(
+                    self._decode_infrared_frame(frame_bytes)
+                )
                 produced_frame = True
                 continue
 
@@ -460,6 +523,11 @@ class SerialReceiveLayer:
             raw_byte=int(frame_bytes[5]),
             device_timestamp_ms=int.from_bytes(frame_bytes[6:10], byteorder="little"),
         )
+
+    def _record_infrared_frame_locked(self, infrared_frame: InfraredFrame) -> None:
+        self._pending_infrared_frames[infrared_frame.device_id] = infrared_frame
+        if self._infrared_layer is not None:
+            self._infrared_layer.handle_infrared_frame(infrared_frame)
 
     def _record_board_frame_locked(self, board_frame: BoardFrame) -> None:
         self._pending_board_frames[board_frame.device_id] = board_frame

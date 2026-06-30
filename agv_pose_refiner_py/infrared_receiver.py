@@ -49,6 +49,7 @@ class InfraredReceiveLayer:
 
         self._state_lock = threading.Lock()
         self._last_poll_cycle_monotonic = 0.0
+        self._next_query_index = 0
 
     def start(self) -> None:
         self.reset_shared_serial_state()
@@ -59,6 +60,7 @@ class InfraredReceiveLayer:
     def reset_shared_serial_state(self) -> None:
         with self._state_lock:
             self._last_poll_cycle_monotonic = 0.0
+            self._next_query_index = 0
             self._processor.reset()
 
     def snapshot_status(self) -> Dict[str, Any]:
@@ -89,11 +91,11 @@ class InfraredReceiveLayer:
                 "board_states": board_states,
             }
 
-    def maybe_send_queries(self, handle: Any) -> None:
+    def claim_next_query_device_id(self) -> Optional[int]:
         if not self.query_device_ids:
-            return
+            return None
         if self.serial_poll_rate_hz <= 0.0:
-            return
+            return None
         poll_interval_sec = 1.0 / self.serial_poll_rate_hz
         with self._state_lock:
             now_monotonic = time.monotonic()
@@ -101,14 +103,15 @@ class InfraredReceiveLayer:
                 self._last_poll_cycle_monotonic > 0.0
                 and now_monotonic - self._last_poll_cycle_monotonic < poll_interval_sec
             ):
-                return
-            query_device_ids = list(self.query_device_ids)
+                return None
+            device_id = self.query_device_ids[self._next_query_index]
+            self._next_query_index = (self._next_query_index + 1) % len(
+                self.query_device_ids
+            )
             self._last_poll_cycle_monotonic = now_monotonic
-        for device_id in query_device_ids:
-            handle.write(self._build_query_frame(device_id))
-        handle.flush()
+            return device_id
 
-    def _build_query_frame(self, device_id: int) -> bytes:
+    def build_query_frame(self, device_id: int) -> bytes:
         payload = bytes([0x5A, 0xA5, INFRARED_QUERY_COMMAND, device_id & 0xFF])
         crc = crc16_modbus(payload)
         return payload + crc.to_bytes(2, byteorder="little")
