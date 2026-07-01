@@ -147,7 +147,18 @@ class InfraredReceiveLayer:
     def _handle_frame_locked(self, frame: InfraredFrame) -> None:
         result = self._processor.process_frame(frame)
         if result.action == "published" and result.event is not None:
-            self._publish_event(result.event)
+            self._publish_event(
+                result.event,
+                publish_topic=True,
+                reason=result.reason,
+            )
+            return
+        if result.debug_event is not None:
+            self._publish_event(
+                result.debug_event,
+                publish_topic=False,
+                reason=result.reason,
+            )
             return
         if result.action == "synced":
             self._logger.info(
@@ -160,10 +171,17 @@ class InfraredReceiveLayer:
                 "resync required on next frame"
             )
 
-    def _publish_event(self, event: InfraredMappedEvent) -> None:
-        topic_msg = UInt8()
-        topic_msg.data = int(event.mapped_byte)
-        self._topic_pub.publish(topic_msg)
+    def _publish_event(
+        self,
+        event: InfraredMappedEvent,
+        *,
+        publish_topic: bool,
+        reason: str,
+    ) -> None:
+        if publish_topic:
+            topic_msg = UInt8()
+            topic_msg.data = int(event.mapped_byte)
+            self._topic_pub.publish(topic_msg)
 
         debug_msg = String()
         debug_msg.data = json.dumps(
@@ -175,6 +193,8 @@ class InfraredReceiveLayer:
                 "aligned_ts_ms": event.aligned_ts_ms,
                 "scene": event.scene,
                 "x": event.x,
+                "reason": reason,
+                "topic_sent": publish_topic,
             },
             ensure_ascii=True,
             separators=(",", ":"),

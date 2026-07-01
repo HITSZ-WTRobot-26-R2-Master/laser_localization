@@ -81,6 +81,7 @@ class InfraredProcessResult:
     reason: str
     aligned_ts_ms: Optional[int] = None
     event: Optional[InfraredMappedEvent] = None
+    debug_event: Optional[InfraredMappedEvent] = None
 
 
 def parse_infrared_config(
@@ -389,6 +390,15 @@ class InfraredEventProcessor:
                 action="dropped",
                 reason="FIRST_TRANSITION_SET_AS_BASELINE",
                 aligned_ts_ms=aligned_ts_ms,
+                debug_event=InfraredMappedEvent(
+                    mapped_type=matched_rule.mapped_type,
+                    device_id=frame.device_id,
+                    raw_byte=frame.raw_byte,
+                    mapped_byte=matched_rule.send_to_topic,
+                    aligned_ts_ms=aligned_ts_ms,
+                    scene=self._config.active_scene,
+                    x=coarse_snapshot.x,
+                ),
             )
 
         if frame.raw_byte == self._baseline_raw_byte:

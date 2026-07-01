@@ -558,6 +558,24 @@ class TestInfraredEventProcessor(unittest.TestCase):
         self.assertEqual(shared_event.raw_byte, 0x11)
         self.assertEqual(shared_event.mapped_byte, 0x01)
 
+    def test_first_transition_baseline_returns_debug_event(self) -> None:
+        self.processor.process_frame(
+            self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
+        )
+        self.processor.process_frame(
+            self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
+        )
+
+        baseline = self.processor.process_frame(
+            self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
+        )
+        self.assertEqual(baseline.action, "dropped")
+        self.assertEqual(baseline.reason, "FIRST_TRANSITION_SET_AS_BASELINE")
+        self.assertIsNotNone(baseline.debug_event)
+        self.assertEqual(baseline.debug_event.raw_byte, 0x22)
+        self.assertEqual(baseline.debug_event.mapped_byte, 0x01)
+        self.assertIsNone(baseline.event)
+
     def test_device_timestamp_rollback_requires_resync(self) -> None:
         self.processor.process_frame(
             self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
@@ -653,14 +671,29 @@ class TestInfraredReceiveLayer(unittest.TestCase):
         debug_pub = node.publishers["/infrared_debug"]
         self.assertEqual(len(topic_pub.messages), 1)
         self.assertEqual(topic_pub.messages[0].data, 0x01)
-        self.assertEqual(len(debug_pub.messages), 1)
-        debug_payload = json.loads(debug_pub.messages[0].data)
-        self.assertEqual(debug_payload["mapped_type"], "spear_done_continue")
-        self.assertEqual(debug_payload["device_id"], 3)
-        self.assertEqual(debug_payload["raw_byte"], 0x11)
-        self.assertEqual(debug_payload["mapped_byte"], 0x01)
-        self.assertEqual(debug_payload["scene"], "mode_red")
-        self.assertAlmostEqual(debug_payload["x"], 1.0, places=6)
+        self.assertEqual(len(debug_pub.messages), 2)
+
+        baseline_debug = json.loads(debug_pub.messages[0].data)
+        self.assertEqual(baseline_debug["mapped_type"], "spear_done_continue")
+        self.assertEqual(baseline_debug["device_id"], 3)
+        self.assertEqual(baseline_debug["raw_byte"], 0x22)
+        self.assertEqual(baseline_debug["mapped_byte"], 0x01)
+        self.assertEqual(baseline_debug["scene"], "mode_red")
+        self.assertAlmostEqual(baseline_debug["x"], 1.0, places=6)
+        self.assertEqual(
+            baseline_debug["reason"], "FIRST_TRANSITION_SET_AS_BASELINE"
+        )
+        self.assertFalse(baseline_debug["topic_sent"])
+
+        publish_debug = json.loads(debug_pub.messages[1].data)
+        self.assertEqual(publish_debug["mapped_type"], "spear_done_continue")
+        self.assertEqual(publish_debug["device_id"], 3)
+        self.assertEqual(publish_debug["raw_byte"], 0x11)
+        self.assertEqual(publish_debug["mapped_byte"], 0x01)
+        self.assertEqual(publish_debug["scene"], "mode_red")
+        self.assertAlmostEqual(publish_debug["x"], 1.0, places=6)
+        self.assertEqual(publish_debug["reason"], "MAPPED")
+        self.assertTrue(publish_debug["topic_sent"])
 
     def test_snapshot_status_includes_shared_raw_byte(self) -> None:
         node = DummyNode()
