@@ -265,12 +265,20 @@ class InfraredEventProcessor:
         self._rules = config.scenes[config.active_scene]
         self._board_states: Dict[int, InfraredBoardSyncState] = {}
         self._shared_last_event: Optional[SharedInfraredEvent] = None
+        self._shared_last_aligned_ts_ms: Optional[int] = None
         self._shared_last_raw_byte = 0x00
+        self._startup_observed_raw_byte: Optional[int] = None
+        self._baseline_raw_byte: Optional[int] = None
+        self._baseline_ready = False
 
     def reset(self) -> None:
         self._board_states.clear()
         self._shared_last_event = None
+        self._shared_last_aligned_ts_ms = None
         self._shared_last_raw_byte = 0x00
+        self._startup_observed_raw_byte = None
+        self._baseline_raw_byte = None
+        self._baseline_ready = False
 
     def process_frame(self, frame: InfraredFrame) -> InfraredProcessResult:
         state = self._board_states.setdefault(frame.device_id, InfraredBoardSyncState())
@@ -315,8 +323,8 @@ class InfraredEventProcessor:
             )
 
         if (
-            self._shared_last_event is not None
-            and aligned_ts_ms <= self._shared_last_event.aligned_ts_ms
+            self._shared_last_aligned_ts_ms is not None
+            and aligned_ts_ms <= self._shared_last_aligned_ts_ms
         ):
             return InfraredProcessResult(
                 action="dropped",
@@ -341,7 +349,7 @@ class InfraredEventProcessor:
             )
 
         if not self._is_x_in_active_window(coarse_snapshot.x):
-            self._shared_last_raw_byte = 0x00
+            self._reset_shared_publish_state()
             return InfraredProcessResult(
                 action="dropped",
                 reason="OUTSIDE_ACTIVE_X_WINDOW",
@@ -356,7 +364,35 @@ class InfraredEventProcessor:
                 aligned_ts_ms=aligned_ts_ms,
             )
 
-        if frame.raw_byte == self._shared_last_raw_byte:
+        if self._startup_observed_raw_byte is None:
+            self._startup_observed_raw_byte = frame.raw_byte
+            self._shared_last_aligned_ts_ms = aligned_ts_ms
+            return InfraredProcessResult(
+                action="dropped",
+                reason="STARTUP_FIRST_VALID_OBSERVED",
+                aligned_ts_ms=aligned_ts_ms,
+            )
+
+        if not self._baseline_ready:
+            if frame.raw_byte == self._startup_observed_raw_byte:
+                self._shared_last_aligned_ts_ms = aligned_ts_ms
+                return InfraredProcessResult(
+                    action="dropped",
+                    reason="WAITING_FOR_FIRST_TRANSITION",
+                    aligned_ts_ms=aligned_ts_ms,
+                )
+            self._baseline_raw_byte = frame.raw_byte
+            self._baseline_ready = True
+            self._shared_last_raw_byte = frame.raw_byte
+            self._shared_last_aligned_ts_ms = aligned_ts_ms
+            return InfraredProcessResult(
+                action="dropped",
+                reason="FIRST_TRANSITION_SET_AS_BASELINE",
+                aligned_ts_ms=aligned_ts_ms,
+            )
+
+        if frame.raw_byte == self._baseline_raw_byte:
+            self._shared_last_aligned_ts_ms = aligned_ts_ms
             return InfraredProcessResult(
                 action="dropped",
                 reason="RAW_BYTE_DUPLICATED",
@@ -364,6 +400,8 @@ class InfraredEventProcessor:
             )
 
         self._shared_last_raw_byte = frame.raw_byte
+        self._baseline_raw_byte = frame.raw_byte
+        self._shared_last_aligned_ts_ms = aligned_ts_ms
         self._shared_last_event = SharedInfraredEvent(
             raw_byte=frame.raw_byte,
             mapped_byte=matched_rule.send_to_topic,
@@ -418,6 +456,12 @@ class InfraredEventProcessor:
             if x_min <= coarse_x <= x_max:
                 return True
         return False
+
+    def _reset_shared_publish_state(self) -> None:
+        self._shared_last_raw_byte = 0x00
+        self._startup_observed_raw_byte = None
+        self._baseline_raw_byte = None
+        self._baseline_ready = False
 
     def _rx_stamp_to_ms(self, stamp: Time) -> int:
         return int(stamp.nanoseconds / 1e6)
