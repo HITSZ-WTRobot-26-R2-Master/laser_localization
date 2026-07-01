@@ -146,6 +146,10 @@ class InfraredReceiveLayer:
 
     def _handle_frame_locked(self, frame: InfraredFrame) -> None:
         result = self._processor.process_frame(frame)
+        if result.sync_established:
+            self._logger.info(
+                f"Infrared sync established for device_id={frame.device_id}"
+            )
         if result.action == "published" and result.event is not None:
             self._publish_event(
                 result.event,
@@ -158,11 +162,6 @@ class InfraredReceiveLayer:
                 result.debug_event,
                 publish_topic=False,
                 reason=result.reason,
-            )
-            return
-        if result.action == "synced":
-            self._logger.info(
-                f"Infrared sync established for device_id={frame.device_id}"
             )
             return
         if result.reason == "DEVICE_TIMESTAMP_ROLLBACK":

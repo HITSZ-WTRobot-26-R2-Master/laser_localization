@@ -79,6 +79,7 @@ class SharedInfraredEvent:
 class InfraredProcessResult:
     action: str
     reason: str
+    sync_established: bool = False
     aligned_ts_ms: Optional[int] = None
     event: Optional[InfraredMappedEvent] = None
     debug_event: Optional[InfraredMappedEvent] = None
@@ -268,21 +269,16 @@ class InfraredEventProcessor:
         self._shared_last_event: Optional[SharedInfraredEvent] = None
         self._shared_last_aligned_ts_ms: Optional[int] = None
         self._shared_last_raw_byte = 0x00
-        self._startup_observed_raw_byte: Optional[int] = None
-        self._baseline_raw_byte: Optional[int] = None
-        self._baseline_ready = False
 
     def reset(self) -> None:
         self._board_states.clear()
         self._shared_last_event = None
         self._shared_last_aligned_ts_ms = None
         self._shared_last_raw_byte = 0x00
-        self._startup_observed_raw_byte = None
-        self._baseline_raw_byte = None
-        self._baseline_ready = False
 
     def process_frame(self, frame: InfraredFrame) -> InfraredProcessResult:
         state = self._board_states.setdefault(frame.device_id, InfraredBoardSyncState())
+        sync_established = False
         if (
             state.synced
             and state.last_device_timestamp_ms is not None
@@ -297,13 +293,12 @@ class InfraredEventProcessor:
             )
 
         if not state.synced:
-            state.sync_offset_ms = self._rx_stamp_to_ms(frame.rx_stamp) - frame.device_timestamp_ms
+            state.sync_offset_ms = (
+                self._rx_stamp_to_ms(frame.rx_stamp) - frame.device_timestamp_ms
+            )
             state.last_device_timestamp_ms = frame.device_timestamp_ms
             state.synced = True
-            return InfraredProcessResult(
-                action="synced",
-                reason="SYNC_ESTABLISHED",
-            )
+            sync_established = True
 
         if state.sync_offset_ms is None:
             state.synced = False
@@ -311,6 +306,7 @@ class InfraredEventProcessor:
             return InfraredProcessResult(
                 action="dropped",
                 reason="SYNC_OFFSET_MISSING",
+                sync_established=sync_established,
             )
 
         aligned_ts_ms = frame.device_timestamp_ms + state.sync_offset_ms
@@ -320,6 +316,7 @@ class InfraredEventProcessor:
             return InfraredProcessResult(
                 action="dropped",
                 reason="RAW_BYTE_ZERO",
+                sync_established=sync_established,
                 aligned_ts_ms=aligned_ts_ms,
             )
 
@@ -330,6 +327,7 @@ class InfraredEventProcessor:
             return InfraredProcessResult(
                 action="dropped",
                 reason="ALIGNED_TIMESTAMP_NOT_NEWER",
+                sync_established=sync_established,
                 aligned_ts_ms=aligned_ts_ms,
             )
 
@@ -338,6 +336,7 @@ class InfraredEventProcessor:
             return InfraredProcessResult(
                 action="dropped",
                 reason="NO_COARSE_X",
+                sync_established=sync_established,
                 aligned_ts_ms=aligned_ts_ms,
             )
 
@@ -346,6 +345,7 @@ class InfraredEventProcessor:
             return InfraredProcessResult(
                 action="dropped",
                 reason="COARSE_X_TOO_OLD",
+                sync_established=sync_established,
                 aligned_ts_ms=aligned_ts_ms,
             )
 
@@ -354,6 +354,7 @@ class InfraredEventProcessor:
             return InfraredProcessResult(
                 action="dropped",
                 reason="OUTSIDE_ACTIVE_X_WINDOW",
+                sync_established=sync_established,
                 aligned_ts_ms=aligned_ts_ms,
             )
 
@@ -362,55 +363,38 @@ class InfraredEventProcessor:
             return InfraredProcessResult(
                 action="dropped",
                 reason="NO_RULE_MATCH",
+                sync_established=sync_established,
                 aligned_ts_ms=aligned_ts_ms,
             )
 
-        if self._startup_observed_raw_byte is None:
-            self._startup_observed_raw_byte = frame.raw_byte
-            self._shared_last_aligned_ts_ms = aligned_ts_ms
-            return InfraredProcessResult(
-                action="dropped",
-                reason="STARTUP_FIRST_VALID_OBSERVED",
-                aligned_ts_ms=aligned_ts_ms,
-            )
+        mapped_event = self._build_mapped_event(
+            frame=frame,
+            matched_rule=matched_rule,
+            aligned_ts_ms=aligned_ts_ms,
+            coarse_x=coarse_snapshot.x,
+        )
 
-        if not self._baseline_ready:
-            if frame.raw_byte == self._startup_observed_raw_byte:
-                self._shared_last_aligned_ts_ms = aligned_ts_ms
-                return InfraredProcessResult(
-                    action="dropped",
-                    reason="WAITING_FOR_FIRST_TRANSITION",
-                    aligned_ts_ms=aligned_ts_ms,
-                )
-            self._baseline_raw_byte = frame.raw_byte
-            self._baseline_ready = True
+        if self._shared_last_raw_byte == 0x00:
             self._shared_last_raw_byte = frame.raw_byte
             self._shared_last_aligned_ts_ms = aligned_ts_ms
             return InfraredProcessResult(
                 action="dropped",
-                reason="FIRST_TRANSITION_SET_AS_BASELINE",
+                reason="INITIALIZED_FROM_ZERO",
+                sync_established=sync_established,
                 aligned_ts_ms=aligned_ts_ms,
-                debug_event=InfraredMappedEvent(
-                    mapped_type=matched_rule.mapped_type,
-                    device_id=frame.device_id,
-                    raw_byte=frame.raw_byte,
-                    mapped_byte=matched_rule.send_to_topic,
-                    aligned_ts_ms=aligned_ts_ms,
-                    scene=self._config.active_scene,
-                    x=coarse_snapshot.x,
-                ),
+                debug_event=mapped_event,
             )
 
-        if frame.raw_byte == self._baseline_raw_byte:
+        if frame.raw_byte == self._shared_last_raw_byte:
             self._shared_last_aligned_ts_ms = aligned_ts_ms
             return InfraredProcessResult(
                 action="dropped",
                 reason="RAW_BYTE_DUPLICATED",
+                sync_established=sync_established,
                 aligned_ts_ms=aligned_ts_ms,
             )
 
         self._shared_last_raw_byte = frame.raw_byte
-        self._baseline_raw_byte = frame.raw_byte
         self._shared_last_aligned_ts_ms = aligned_ts_ms
         self._shared_last_event = SharedInfraredEvent(
             raw_byte=frame.raw_byte,
@@ -423,16 +407,9 @@ class InfraredEventProcessor:
         return InfraredProcessResult(
             action="published",
             reason="MAPPED",
+            sync_established=sync_established,
             aligned_ts_ms=aligned_ts_ms,
-            event=InfraredMappedEvent(
-                mapped_type=matched_rule.mapped_type,
-                device_id=frame.device_id,
-                raw_byte=frame.raw_byte,
-                mapped_byte=matched_rule.send_to_topic,
-                aligned_ts_ms=aligned_ts_ms,
-                scene=self._config.active_scene,
-                x=coarse_snapshot.x,
-            ),
+            event=mapped_event,
         )
 
     def snapshot_shared_last_event(self) -> Optional[SharedInfraredEvent]:
@@ -461,6 +438,24 @@ class InfraredEventProcessor:
                 return rule
         return None
 
+    def _build_mapped_event(
+        self,
+        *,
+        frame: InfraredFrame,
+        matched_rule: InfraredRule,
+        aligned_ts_ms: int,
+        coarse_x: float,
+    ) -> InfraredMappedEvent:
+        return InfraredMappedEvent(
+            mapped_type=matched_rule.mapped_type,
+            device_id=frame.device_id,
+            raw_byte=frame.raw_byte,
+            mapped_byte=matched_rule.send_to_topic,
+            aligned_ts_ms=aligned_ts_ms,
+            scene=self._config.active_scene,
+            x=coarse_x,
+        )
+
     def _is_x_in_active_window(self, coarse_x: float) -> bool:
         for x_min, x_max in INFRARED_ACTIVE_X_RANGES:
             if x_min <= coarse_x <= x_max:
@@ -469,9 +464,6 @@ class InfraredEventProcessor:
 
     def _reset_shared_publish_state(self) -> None:
         self._shared_last_raw_byte = 0x00
-        self._startup_observed_raw_byte = None
-        self._baseline_raw_byte = None
-        self._baseline_ready = False
 
     def _rx_stamp_to_ms(self, stamp: Time) -> int:
         return int(stamp.nanoseconds / 1e6)

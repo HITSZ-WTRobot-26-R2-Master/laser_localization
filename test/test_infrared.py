@@ -257,63 +257,62 @@ class TestInfraredEventProcessor(unittest.TestCase):
             device_timestamp_ms=device_ts_ms,
         )
 
-    def test_first_frame_only_syncs(self) -> None:
+    def test_first_synced_frame_initializes_with_debug_only(self) -> None:
         result = self.processor.process_frame(
             self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
         )
-        self.assertEqual(result.action, "synced")
-        self.assertEqual(result.reason, "SYNC_ESTABLISHED")
+        self.assertEqual(result.action, "dropped")
+        self.assertEqual(result.reason, "INITIALIZED_FROM_ZERO")
+        self.assertTrue(result.sync_established)
+        self.assertIsNotNone(result.debug_event)
+        self.assertIsNone(result.event)
         self.assertIsNone(self.processor.snapshot_shared_last_event())
 
-    def test_first_valid_value_only_observes_without_publish(self) -> None:
-        self.processor.process_frame(
+    def test_duplicate_raw_byte_is_deduplicated_after_initialization(self) -> None:
+        initialized = self.processor.process_frame(
             self._frame(rx_ms=990, device_id=4, raw_byte=0x11, device_ts_ms=980)
         )
-        self.processor.process_frame(
-            self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
-        )
-        observed = self.processor.process_frame(
-            self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
-        )
-        self.assertEqual(observed.action, "dropped")
-        self.assertEqual(observed.reason, "STARTUP_FIRST_VALID_OBSERVED")
-        self.assertIsNone(self.processor.snapshot_shared_last_event())
+        self.assertEqual(initialized.reason, "INITIALIZED_FROM_ZERO")
 
         duplicate_byte = self.processor.process_frame(
-            self._frame(rx_ms=1030, device_id=4, raw_byte=0x11, device_ts_ms=1010)
-        )
-        self.assertEqual(duplicate_byte.action, "dropped")
-        self.assertEqual(duplicate_byte.reason, "WAITING_FOR_FIRST_TRANSITION")
-
-    def test_first_transition_sets_baseline_then_next_change_publishes(self) -> None:
-        self.processor.process_frame(
             self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
         )
-        observed = self.processor.process_frame(
+        self.assertEqual(duplicate_byte.action, "dropped")
+        self.assertEqual(duplicate_byte.reason, "RAW_BYTE_DUPLICATED")
+        self.assertTrue(duplicate_byte.sync_established)
+        self.assertIsNone(self.processor.snapshot_shared_last_event())
+
+        repeated = self.processor.process_frame(
             self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
         )
-        self.assertEqual(observed.reason, "STARTUP_FIRST_VALID_OBSERVED")
+        self.assertEqual(repeated.action, "dropped")
+        self.assertEqual(repeated.reason, "RAW_BYTE_DUPLICATED")
 
-        baseline = self.processor.process_frame(
-            self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
+    def test_first_change_after_initialization_publishes(self) -> None:
+        initialized = self.processor.process_frame(
+            self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
         )
-        self.assertEqual(baseline.action, "dropped")
-        self.assertEqual(baseline.reason, "FIRST_TRANSITION_SET_AS_BASELINE")
+        self.assertEqual(initialized.reason, "INITIALIZED_FROM_ZERO")
+
+        duplicate = self.processor.process_frame(
+            self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
+        )
+        self.assertEqual(duplicate.reason, "RAW_BYTE_DUPLICATED")
 
         first_publish = self.processor.process_frame(
-            self._frame(rx_ms=1030, device_id=3, raw_byte=0x33, device_ts_ms=150)
+            self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
         )
         self.assertEqual(first_publish.action, "published")
         self.assertEqual(first_publish.event.mapped_byte, 0x01)
 
         second = self.processor.process_frame(
-            self._frame(rx_ms=1040, device_id=3, raw_byte=0x11, device_ts_ms=160)
+            self._frame(rx_ms=1030, device_id=3, raw_byte=0x33, device_ts_ms=150)
         )
         self.assertEqual(second.action, "published")
         self.assertEqual(second.event.mapped_byte, 0x01)
 
         older_ts = self.processor.process_frame(
-            self._frame(rx_ms=1050, device_id=3, raw_byte=0x22, device_ts_ms=130)
+            self._frame(rx_ms=1040, device_id=3, raw_byte=0x22, device_ts_ms=130)
         )
         self.assertEqual(older_ts.action, "dropped")
         self.assertEqual(older_ts.reason, "DEVICE_TIMESTAMP_ROLLBACK")
@@ -345,7 +344,7 @@ class TestInfraredEventProcessor(unittest.TestCase):
             self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
         )
         self.assertEqual(observed.action, "dropped")
-        self.assertEqual(observed.reason, "STARTUP_FIRST_VALID_OBSERVED")
+        self.assertEqual(observed.reason, "INITIALIZED_FROM_ZERO")
 
     def test_stale_coarse_x_is_dropped(self) -> None:
         self.latest_coarse = (1.0, Time(nanoseconds=100_000_000))
@@ -360,15 +359,18 @@ class TestInfraredEventProcessor(unittest.TestCase):
         self.assertIsNone(self.processor.snapshot_shared_last_event())
 
     def test_x_outside_active_window_clears_raw_byte_memory_without_publish(self) -> None:
-        self.processor.process_frame(
+        initialized = self.processor.process_frame(
             self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
         )
+        self.assertEqual(initialized.reason, "INITIALIZED_FROM_ZERO")
+        self.assertEqual(self.processor._shared_last_raw_byte, 0x11)
+
         observed = self.processor.process_frame(
             self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
         )
         self.assertEqual(observed.action, "dropped")
-        self.assertEqual(observed.reason, "STARTUP_FIRST_VALID_OBSERVED")
-        self.assertEqual(self.processor._shared_last_raw_byte, 0x00)
+        self.assertEqual(observed.reason, "RAW_BYTE_DUPLICATED")
+        self.assertEqual(self.processor._shared_last_raw_byte, 0x11)
 
         self.latest_coarse = (5.0, Time(nanoseconds=1_020_000_000))
         outside = self.processor.process_frame(
@@ -407,7 +409,7 @@ class TestInfraredEventProcessor(unittest.TestCase):
             self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
         )
         self.assertEqual(first.action, "dropped")
-        self.assertEqual(first.reason, "STARTUP_FIRST_VALID_OBSERVED")
+        self.assertEqual(first.reason, "RAW_BYTE_DUPLICATED")
 
         self.latest_coarse = (5.0, Time(nanoseconds=1_020_000_000))
         outside = self.processor.process_frame(
@@ -421,27 +423,21 @@ class TestInfraredEventProcessor(unittest.TestCase):
             self._frame(rx_ms=1030, device_id=3, raw_byte=0x11, device_ts_ms=150)
         )
         self.assertEqual(second.action, "dropped")
-        self.assertEqual(second.reason, "STARTUP_FIRST_VALID_OBSERVED")
-
-        third = self.processor.process_frame(
-            self._frame(rx_ms=1040, device_id=3, raw_byte=0x22, device_ts_ms=160)
-        )
-        self.assertEqual(third.action, "dropped")
-        self.assertEqual(third.reason, "FIRST_TRANSITION_SET_AS_BASELINE")
+        self.assertEqual(second.reason, "INITIALIZED_FROM_ZERO")
 
         published = self.processor.process_frame(
-            self._frame(rx_ms=1050, device_id=3, raw_byte=0x11, device_ts_ms=170)
+            self._frame(rx_ms=1040, device_id=3, raw_byte=0x22, device_ts_ms=160)
         )
         self.assertEqual(published.action, "published")
         self.assertEqual(published.event.mapped_byte, 0x03)
 
-        published = self.processor.process_frame(
+        no_match = self.processor.process_frame(
             self._frame(rx_ms=1060, device_id=3, raw_byte=0x33, device_ts_ms=180)
         )
-        self.assertEqual(published.action, "dropped")
-        self.assertEqual(published.reason, "NO_RULE_MATCH")
+        self.assertEqual(no_match.action, "dropped")
+        self.assertEqual(no_match.reason, "NO_RULE_MATCH")
 
-    def test_reenter_window_then_transition_publishes(self) -> None:
+    def test_reenter_window_then_first_change_publishes(self) -> None:
         self.processor = self._new_processor(
             (
                 InfraredRule(
@@ -478,16 +474,10 @@ class TestInfraredEventProcessor(unittest.TestCase):
             self._frame(rx_ms=1030, device_id=3, raw_byte=0x11, device_ts_ms=150)
         )
         self.assertEqual(reentered.action, "dropped")
-        self.assertEqual(reentered.reason, "STARTUP_FIRST_VALID_OBSERVED")
-
-        baseline = self.processor.process_frame(
-            self._frame(rx_ms=1040, device_id=3, raw_byte=0x22, device_ts_ms=160)
-        )
-        self.assertEqual(baseline.action, "dropped")
-        self.assertEqual(baseline.reason, "FIRST_TRANSITION_SET_AS_BASELINE")
+        self.assertEqual(reentered.reason, "INITIALIZED_FROM_ZERO")
 
         published = self.processor.process_frame(
-            self._frame(rx_ms=1050, device_id=3, raw_byte=0x11, device_ts_ms=170)
+            self._frame(rx_ms=1040, device_id=3, raw_byte=0x22, device_ts_ms=160)
         )
         self.assertEqual(published.action, "published")
         self.assertEqual(published.event.mapped_byte, 0x03)
@@ -523,58 +513,45 @@ class TestInfraredEventProcessor(unittest.TestCase):
             self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
         )
         self.assertEqual(near_event.action, "dropped")
-        self.assertEqual(near_event.reason, "STARTUP_FIRST_VALID_OBSERVED")
+        self.assertEqual(near_event.reason, "INITIALIZED_FROM_ZERO")
 
         self.latest_coarse = (10.0, Time(nanoseconds=1_020_000_000))
         far_event = self.processor.process_frame(
             self._frame(rx_ms=1030, device_id=4, raw_byte=0x11, device_ts_ms=1020)
         )
         self.assertEqual(far_event.action, "dropped")
-        self.assertEqual(far_event.reason, "WAITING_FOR_FIRST_TRANSITION")
+        self.assertEqual(far_event.reason, "RAW_BYTE_DUPLICATED")
 
     def test_snapshot_shared_last_event_exposes_raw_byte(self) -> None:
         self.processor.process_frame(
             self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
         )
-        observed = self.processor.process_frame(
+        published = self.processor.process_frame(
             self._frame(rx_ms=1010, device_id=3, raw_byte=0x22, device_ts_ms=130)
         )
-        self.assertEqual(observed.action, "dropped")
-        self.assertEqual(observed.reason, "STARTUP_FIRST_VALID_OBSERVED")
-
-        baseline = self.processor.process_frame(
-            self._frame(rx_ms=1020, device_id=3, raw_byte=0x33, device_ts_ms=140)
-        )
-        self.assertEqual(baseline.action, "dropped")
-        self.assertEqual(baseline.reason, "FIRST_TRANSITION_SET_AS_BASELINE")
-
-        published = self.processor.process_frame(
-            self._frame(rx_ms=1030, device_id=3, raw_byte=0x11, device_ts_ms=150)
-        )
         self.assertEqual(published.action, "published")
+
+        published_again = self.processor.process_frame(
+            self._frame(rx_ms=1020, device_id=3, raw_byte=0x11, device_ts_ms=140)
+        )
+        self.assertEqual(published_again.action, "published")
 
         shared_event = self.processor.snapshot_shared_last_event()
         self.assertIsNotNone(shared_event)
         self.assertEqual(shared_event.raw_byte, 0x11)
         self.assertEqual(shared_event.mapped_byte, 0x01)
 
-    def test_first_transition_baseline_returns_debug_event(self) -> None:
-        self.processor.process_frame(
+    def test_initialization_returns_debug_event(self) -> None:
+        initialized = self.processor.process_frame(
             self._frame(rx_ms=1000, device_id=3, raw_byte=0x11, device_ts_ms=120)
         )
-        self.processor.process_frame(
-            self._frame(rx_ms=1010, device_id=3, raw_byte=0x11, device_ts_ms=130)
-        )
-
-        baseline = self.processor.process_frame(
-            self._frame(rx_ms=1020, device_id=3, raw_byte=0x22, device_ts_ms=140)
-        )
-        self.assertEqual(baseline.action, "dropped")
-        self.assertEqual(baseline.reason, "FIRST_TRANSITION_SET_AS_BASELINE")
-        self.assertIsNotNone(baseline.debug_event)
-        self.assertEqual(baseline.debug_event.raw_byte, 0x22)
-        self.assertEqual(baseline.debug_event.mapped_byte, 0x01)
-        self.assertIsNone(baseline.event)
+        self.assertEqual(initialized.action, "dropped")
+        self.assertEqual(initialized.reason, "INITIALIZED_FROM_ZERO")
+        self.assertTrue(initialized.sync_established)
+        self.assertIsNotNone(initialized.debug_event)
+        self.assertEqual(initialized.debug_event.raw_byte, 0x11)
+        self.assertEqual(initialized.debug_event.mapped_byte, 0x01)
+        self.assertIsNone(initialized.event)
 
     def test_device_timestamp_rollback_requires_resync(self) -> None:
         self.processor.process_frame(
@@ -592,8 +569,10 @@ class TestInfraredEventProcessor(unittest.TestCase):
         resync = self.processor.process_frame(
             self._frame(rx_ms=1030, device_id=3, raw_byte=0x33, device_ts_ms=81)
         )
-        self.assertEqual(resync.action, "synced")
-        self.assertEqual(resync.reason, "SYNC_ESTABLISHED")
+        self.assertEqual(resync.action, "published")
+        self.assertEqual(resync.reason, "MAPPED")
+        self.assertTrue(resync.sync_established)
+        self.assertEqual(resync.event.raw_byte, 0x33)
 
 
 class TestInfraredReceiveLayer(unittest.TestCase):
@@ -641,29 +620,11 @@ class TestInfraredReceiveLayer(unittest.TestCase):
         )
         layer._handle_frame_locked(
             InfraredFrame(
-                rx_stamp=Time(nanoseconds=1_010_000_000),
-                device_id=3,
-                report_type=0x01,
-                raw_byte=0x11,
-                device_timestamp_ms=110,
-            )
-        )
-        layer._handle_frame_locked(
-            InfraredFrame(
                 rx_stamp=Time(nanoseconds=1_020_000_000),
                 device_id=3,
                 report_type=0x01,
                 raw_byte=0x22,
                 device_timestamp_ms=120,
-            )
-        )
-        layer._handle_frame_locked(
-            InfraredFrame(
-                rx_stamp=Time(nanoseconds=1_030_000_000),
-                device_id=3,
-                report_type=0x01,
-                raw_byte=0x11,
-                device_timestamp_ms=130,
             )
         )
 
@@ -673,22 +634,20 @@ class TestInfraredReceiveLayer(unittest.TestCase):
         self.assertEqual(topic_pub.messages[0].data, 0x01)
         self.assertEqual(len(debug_pub.messages), 2)
 
-        baseline_debug = json.loads(debug_pub.messages[0].data)
-        self.assertEqual(baseline_debug["mapped_type"], "spear_done_continue")
-        self.assertEqual(baseline_debug["device_id"], 3)
-        self.assertEqual(baseline_debug["raw_byte"], 0x22)
-        self.assertEqual(baseline_debug["mapped_byte"], 0x01)
-        self.assertEqual(baseline_debug["scene"], "mode_red")
-        self.assertAlmostEqual(baseline_debug["x"], 1.0, places=6)
-        self.assertEqual(
-            baseline_debug["reason"], "FIRST_TRANSITION_SET_AS_BASELINE"
-        )
-        self.assertFalse(baseline_debug["topic_sent"])
+        init_debug = json.loads(debug_pub.messages[0].data)
+        self.assertEqual(init_debug["mapped_type"], "spear_done_continue")
+        self.assertEqual(init_debug["device_id"], 3)
+        self.assertEqual(init_debug["raw_byte"], 0x11)
+        self.assertEqual(init_debug["mapped_byte"], 0x01)
+        self.assertEqual(init_debug["scene"], "mode_red")
+        self.assertAlmostEqual(init_debug["x"], 1.0, places=6)
+        self.assertEqual(init_debug["reason"], "INITIALIZED_FROM_ZERO")
+        self.assertFalse(init_debug["topic_sent"])
 
         publish_debug = json.loads(debug_pub.messages[1].data)
         self.assertEqual(publish_debug["mapped_type"], "spear_done_continue")
         self.assertEqual(publish_debug["device_id"], 3)
-        self.assertEqual(publish_debug["raw_byte"], 0x11)
+        self.assertEqual(publish_debug["raw_byte"], 0x22)
         self.assertEqual(publish_debug["mapped_byte"], 0x01)
         self.assertEqual(publish_debug["scene"], "mode_red")
         self.assertAlmostEqual(publish_debug["x"], 1.0, places=6)
@@ -713,33 +672,15 @@ class TestInfraredReceiveLayer(unittest.TestCase):
                 rx_stamp=Time(nanoseconds=1_010_000_000),
                 device_id=3,
                 report_type=0x01,
-                raw_byte=0x11,
-                device_timestamp_ms=110,
-            )
-        )
-        layer._handle_frame_locked(
-            InfraredFrame(
-                rx_stamp=Time(nanoseconds=1_020_000_000),
-                device_id=3,
-                report_type=0x01,
                 raw_byte=0x22,
                 device_timestamp_ms=120,
             )
         )
-        layer._handle_frame_locked(
-            InfraredFrame(
-                rx_stamp=Time(nanoseconds=1_030_000_000),
-                device_id=3,
-                report_type=0x01,
-                raw_byte=0x11,
-                device_timestamp_ms=130,
-            )
-        )
 
         snapshot = layer.snapshot_status()
-        self.assertEqual(snapshot["shared_last_event"]["raw_byte"], 0x11)
+        self.assertEqual(snapshot["shared_last_event"]["raw_byte"], 0x22)
         self.assertEqual(snapshot["shared_last_event"]["source_device_id"], 3)
-        self.assertEqual(snapshot["shared_last_event"]["aligned_ts_ms"], 1030)
+        self.assertEqual(snapshot["shared_last_event"]["aligned_ts_ms"], 1020)
 
     def test_claim_next_query_device_id_respects_poll_interval(self) -> None:
         node = DummyNode()
